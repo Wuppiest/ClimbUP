@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClimbUP</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: #fff; user-select: none; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .hidden { display: none !important; }
+  .shadow { text-shadow: 0 2px 0 rgba(0,0,0,.55), 0 0 12px rgba(0,0,0,.35); }
+
+  /* HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #timer { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 38px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+  #best { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); font-size: 14px; opacity: .85; font-variant-numeric: tabular-nums; }
+  #area { position: absolute; top: 16px; left: 18px; font-size: 18px; font-weight: 700; }
+  #height { position: absolute; top: 16px; right: 18px; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+  #height small { display: block; font-size: 12px; font-weight: 600; opacity: .8; }
+  #flagInfo { position: absolute; bottom: 18px; left: 18px; font-size: 16px; font-weight: 700; padding: 8px 12px; background: rgba(0,0,0,.35); border-radius: 10px; }
+  #flagInfo.pending { background: rgba(210,40,40,.55); }
+  #keysHint { position: absolute; bottom: 18px; right: 18px; font-size: 12px; opacity: .75; text-align: right; line-height: 1.5; }
+  #cross { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,.85); box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
+  #prompt { position: absolute; top: 60%; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: 700; padding: 6px 14px; background: rgba(0,0,0,.45); border-radius: 8px; }
+  #feedback { position: absolute; top: 38%; left: 50%; transform: translate(-50%,-50%); font-size: 34px; font-weight: 900; letter-spacing: 2px; opacity: 0; transition: opacity .25s; }
+  #feedback.show { opacity: 1; transition: none; }
+  #toast { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); font-size: 17px; font-weight: 700; padding: 8px 16px; background: rgba(0,0,0,.5); border-radius: 10px; opacity: 0; transition: opacity .3s; white-space: nowrap; }
+  #toast.show { opacity: 1; transition: none; }
+  #banner { position: absolute; top: 24%; left: 50%; transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity .8s; }
+  #banner.show { opacity: 1; transition: opacity .3s; }
+  #banner .small { font-size: 16px; letter-spacing: 6px; font-weight: 700; opacity: .9; }
+  #banner .big { font-size: 56px; font-weight: 900; letter-spacing: 1px; }
+  #grind { position: absolute; top: 46%; left: 50%; transform: translateX(-50%); font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #ffd84a; }
+  #grindBar { width: 120px; height: 5px; background: rgba(255,255,255,.25); border-radius: 3px; margin: 4px auto 0; overflow: hidden; }
+  #grindBar div { height: 100%; background: #ffd84a; width: 100%; }
+
+  /* Overlays */
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(20,24,40,.72), rgba(5,6,12,.92)); z-index: 10; }
+  .panel { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 28px 30px; background: rgba(18,20,32,.92); border: 2px solid rgba(255,255,255,.12); border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.5); text-align: center; }
+  h1.logo { margin: 0; font-size: 72px; font-weight: 900; letter-spacing: -2px; line-height: 1; background: linear-gradient(180deg,#ffe066,#ff8a3d); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 0 #7a2e0b); }
+  h1.logo span { background: linear-gradient(180deg,#8be9ff,#3d8bff); -webkit-background-clip: text; background-clip: text; }
+  h2 { margin: 0 0 12px; font-size: 32px; }
+  .sub { margin: 10px 0 20px; opacity: .85; font-size: 15px; }
+  table.keys { margin: 0 auto 18px; border-collapse: collapse; font-size: 14px; text-align: left; }
+  table.keys td { padding: 4px 10px; }
+  table.keys td:first-child { text-align: right; white-space: nowrap; }
+  kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border-radius: 6px; background: #2c3150; border: 1px solid #4a5280; border-bottom-width: 3px; font-family: inherit; font-size: 12px; font-weight: 700; text-align: center; }
+  .btn { pointer-events: auto; display: inline-block; margin: 6px; padding: 12px 26px; font-size: 18px; font-weight: 800; color: #1a1205; background: linear-gradient(180deg,#ffe066,#ffae3d); border: 0; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 0 #a5560f; font-family: inherit; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.grey { color: #fff; background: linear-gradient(180deg,#4b5275,#363b58); box-shadow: 0 4px 0 #1f2236; }
+  .btn.small { font-size: 13px; padding: 8px 14px; }
+  .pb { margin-top: 10px; font-size: 15px; opacity: .9; font-variant-numeric: tabular-nums; }
+  .settings { margin: 18px auto 6px; display: grid; grid-template-columns: auto 1fr auto; gap: 10px 12px; align-items: center; max-width: 420px; text-align: left; font-size: 14px; }
+  .settings input[type=range] { width: 100%; }
+  .bigtime { font-size: 54px; font-weight: 900; font-variant-numeric: tabular-nums; margin: 6px 0; }
+  .record { color: #ffd84a; font-weight: 900; letter-spacing: 2px; }
+
+  #confirm { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 9; padding: 20px 28px; background: rgba(18,20,32,.94); border: 2px solid rgba(255,255,255,.18); border-radius: 14px; text-align: center; font-size: 18px; font-weight: 700; }
+  #confirm .opts { margin-top: 12px; font-size: 15px; font-weight: 600; opacity: .9; }
+
+  #dialog { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(720px, calc(100vw - 32px)); z-index: 8; padding: 18px 22px; background: rgba(255,250,225,.96); color: #2b2210; border: 4px solid #f2c200; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  #dialog .name { font-weight: 900; font-size: 15px; letter-spacing: 1px; color: #b07a00; margin-bottom: 6px; }
+  #dialog .text { font-size: 20px; font-weight: 700; line-height: 1.35; min-height: 28px; }
+  #dialog .opts { margin-top: 12px; display: grid; gap: 6px; }
+  #dialog .opt { font-size: 17px; font-weight: 600; padding: 6px 10px; background: rgba(0,0,0,.06); border-radius: 8px; }
+  #dialog .opt kbd { background: #2b2210; color: #ffe066; border-color: #000; margin-right: 8px; }
+  #dialog .count { font-size: 64px; font-weight: 900; text-align: center; color: #d23; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="area" class="shadow">Schrottplatz</div>
+  <div id="timer" class="shadow">00:00.00</div>
+  <div id="best" class="shadow"></div>
+  <div id="height" class="shadow">0 m<small>Ziel: ? m</small></div>
+  <div id="cross"></div>
+  <div id="prompt" class="shadow hidden"></div>
+  <div id="feedback" class="shadow"></div>
+  <div id="toast" class="shadow"></div>
+  <div id="banner" class="shadow"><div class="small">GEBIET</div><div class="big">Schrottplatz</div></div>
+  <div id="grind" class="shadow hidden">GRIND<div id="grindBar"><div></div></div></div>
+  <div id="flagInfo" class="shadow">🚩 Flagge: in der Hand</div>
+  <div id="keysHint" class="shadow"><kbd>E</kbd> Flagge &nbsp; <kbd>R</kbd> Respawn &nbsp; <kbd>Esc</kbd> Pause</div>
+</div>
+
+<div id="start" class="overlay">
+  <div class="panel">
+    <h1 class="logo">Climb<span>UP</span></h1>
+    <div class="sub">Hüpf mit deinem Pogo-Stick über einen Berg aus geklautem Krempel bis ganz nach oben.<br>Dort oben wartet jemand auf dich…</div>
+    <table class="keys">
+      <tr><td><kbd>Maus</kbd></td><td>Umschauen</td></tr>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Pogo-Stick neigen / Richtung</td></tr>
+      <tr><td><kbd>Leertaste</kbd></td><td>Genau beim Aufkommen drücken = <b>hoher Sprung</b> (perfektes Timing = noch höher)</td></tr>
+      <tr><td><kbd>Shift</kbd></td><td>An einer Wand halten = <b>grinden</b>, loslassen = abstoßen</td></tr>
+      <tr><td><kbd>E</kbd></td><td>Checkpoint-Flagge setzen (nächste Landung, flacher Boden) / aufheben</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Respawn an der Flagge (liegt sie nicht, zurück zum Start)</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Reden</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Pause / Einstellungen</td></tr>
+    </table>
+    <button class="btn" id="startBtn">Klicken zum Starten</button>
+    <div class="pb" id="startBest"></div>
+  </div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>Pause</h2>
+    <button class="btn" id="resumeBtn">Weiter</button>
+    <button class="btn grey" id="restartBtn">Neuer Lauf</button>
+    <div class="settings">
+      <label for="sens">Maus-Empfindlichkeit</label><input id="sens" type="range" min="0.4" max="3" step="0.05"><span id="sensV"></span>
+      <label for="fov">Sichtfeld (FOV)</label><input id="fov" type="range" min="60" max="110" step="1"><span id="fovV"></span>
+      <label for="ring">Landepunkt anzeigen</label><input id="ring" type="checkbox"><span></span>
+    </div>
+    <div class="pb" id="pauseBest"></div>
+    <button class="btn grey small" id="resetBestBtn">Bestzeit löschen</button>
+  </div>
+</div>
+
+<div id="win" class="overlay hidden">
+  <div class="panel">
+    <h2>🦆 Geschafft!</h2>
+    <div class="sub">Die Ente ist (fast) beeindruckt.</div>
+    <div class="bigtime" id="winTime">00:00.00</div>
+    <div id="winRecord" class="record hidden">NEUE BESTZEIT!</div>
+    <div class="pb" id="winBest"></div>
+    <div class="pb" id="winStats"></div>
+    <br>
+    <button class="btn" id="againBtn">Nochmal</button>
+  </div>
+</div>
+
+<div id="confirm" class="hidden">
+  <div id="confirmText">Wirklich respawnen?</div>
+  <div class="opts"><kbd>Enter</kbd> / <kbd>J</kbd> Ja &nbsp;&nbsp; <kbd>N</kbd> / <kbd>R</kbd> Nein</div>
+</div>
+
+<div id="dialog" class="hidden">
+  <div class="name">🦆 DIE GUMMIENTE</div>
+  <div class="text" id="dlgText"></div>
+  <div class="opts" id="dlgOpts"></div>
+</div>
+
+<script>/*__THREE__*/</script>
+<script>/*__GAME__*/</script>
+</body>
+</html>
