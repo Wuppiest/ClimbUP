@@ -1,4 +1,4 @@
-// Builds the single-file game: node build.js  ->  ClimbUP.html
+// Builds the single-file game: node build.js  ->  index.html
 const fs = require('fs');
 const path = require('path');
 const r = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8');
@@ -7,5 +7,5 @@ const game = ['src/core.js', 'src/builders.js', 'src/world.js', 'src/main.js'].m
 const html = r('src/template.html')
   .replace('/*__THREE__*/', () => three)
   .replace('/*__GAME__*/', () => game);
-fs.writeFileSync(path.join(__dirname, 'ClimbUP.html'), html);
-console.log('ClimbUP.html written,', (html.length / 1024).toFixed(0), 'KB');
+fs.writeFileSync(path.join(__dirname, 'index.html'), html);
+console.log('index.html written,', (html.length / 1024).toFixed(0), 'KB');
