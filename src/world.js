@@ -25,7 +25,7 @@ const TUTORIAL = {
   2: ['LEERTASTE HALTEN', '= Sprung aufladen', 'Länger halten = höher'],
   5: ['VOLL AUFLADEN', 'für die ganz hohen Sprünge', 'Achte auf "MAX!"'],
   8: ['E = CHECKPOINT-FLAGGE', 'auf flachem Boden setzen.', 'R = Respawn an der Flagge'],
-  12: ['SHIFT an einer Wand', '= GRINDEN', 'Loslassen = abstoßen!'],
+  12: ['LEERTASTE an einer Wand', 'halten = GRINDEN', 'Loslassen = abstoßen!'],
 };
 
 const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], signs: [], duck: null, goalY: 0, fails: 0 };

@@ -17,6 +17,7 @@ const CFG = {
   CHARGE_TIME: 0.7,   // seconds of holding space for a full charge
   CHARGE_DROP: 0.55,  // how far the view sinks at full charge
   WALK_SPEED: 3.0,    // rolling around on the ground
+  SNEAK_SPEED: 1.6,   // holding shift: slower, can't roll off edges
   MOVE_SPEED: 6.5,    // horizontal speed when steering
   AIR_ACCEL: 10,      // air control strength
   GRIND_SLOW: 2.0,    // seconds of slow sliding while grinding

@@ -98,7 +98,8 @@
       <tr><td><kbd>Maus</kbd></td><td>Umschauen</td></tr>
       <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Langsam rollen / Sprungrichtung</td></tr>
       <tr><td><kbd>Leertaste</kbd></td><td><b>Halten</b> = Sprung aufladen, <b>loslassen</b> = springen. Länger halten = höher</td></tr>
-      <tr><td><kbd>Shift</kbd></td><td>An einer Wand halten = <b>grinden</b>, loslassen = abstoßen</td></tr>
+      <tr><td><kbd>Leertaste</kbd> in der Luft</td><td>An einer Wand halten = <b>grinden</b>, loslassen = abstoßen</td></tr>
+      <tr><td><kbd>Shift</kbd></td><td>Schleichen: langsamer, du rollst nicht über Kanten</td></tr>
       <tr><td><kbd>E</kbd></td><td>Checkpoint-Flagge setzen (auf flachem Boden; in der Luft: bei der Landung) / aufheben</td></tr>
       <tr><td><kbd>R</kbd></td><td>Respawn an der Flagge (liegt sie nicht, zurück zum Start)</td></tr>
       <tr><td><kbd>F</kbd></td><td>Reden</td></tr>
@@ -175,6 +176,7 @@ const CFG = {
   CHARGE_TIME: 0.7,   // seconds of holding space for a full charge
   CHARGE_DROP: 0.55,  // how far the view sinks at full charge
   WALK_SPEED: 3.0,    // rolling around on the ground
+  SNEAK_SPEED: 1.6,   // holding shift: slower, can't roll off edges
   MOVE_SPEED: 6.5,    // horizontal speed when steering
   AIR_ACCEL: 10,      // air control strength
   GRIND_SLOW: 2.0,    // seconds of slow sliding while grinding
@@ -972,7 +974,7 @@ const TUTORIAL = {
   2: ['LEERTASTE HALTEN', '= Sprung aufladen', 'Länger halten = höher'],
   5: ['VOLL AUFLADEN', 'für die ganz hohen Sprünge', 'Achte auf "MAX!"'],
   8: ['E = CHECKPOINT-FLAGGE', 'auf flachem Boden setzen.', 'R = Respawn an der Flagge'],
-  12: ['SHIFT an einer Wand', '= GRINDEN', 'Loslassen = abstoßen!'],
+  12: ['LEERTASTE an einer Wand', 'halten = GRINDEN', 'Loslassen = abstoßen!'],
 };
 
 const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], signs: [], duck: null, goalY: 0, fails: 0 };
@@ -1371,7 +1373,7 @@ vm.position.copy(VM_BASE); vm.rotation.x = 0.12; vm.scale.setScalar(0.85);
 // ---------------- player state ----------------
 const P = {
   pos: WORLD.start.clone(), vel: new V3(), yaw: WORLD.startYaw, pitch: -0.05, roll: 0,
-  state: 'air', charge: 0, chargeVis: 0, coyote: 0, tap: false,
+  state: 'air', charge: 0, chargeVis: 0, sneakVis: 0, coyote: 0, tap: false,
   landPoint: new V3(), landN: new V3(0, 1, 0),
   grind: false, grindT: 0, wallN: new V3(), lostT: 0, grindCd: 0, kicked: false, lastKickN: new V3(),
   peakY: 0, dip: 0, dipV: 0, fovKick: 0,
@@ -1446,7 +1448,7 @@ function step(dt) {
   if (P.pos.y > P.peakY) P.peakY = P.pos.y;
 
   // grinding
-  if (!P.grind && (keys.ShiftLeft || keys.ShiftRight) && contacts.wall && !contacts.ground && P.grindCd <= 0) {
+  if (!P.grind && keys.Space && contacts.wall && !contacts.ground && P.grindCd <= 0) {
     if (!(P.kicked && contacts.wall.dot(P.lastKickN) > 0.7)) startGrind(contacts.wall);
   }
   if (P.grind) {
@@ -1465,13 +1467,29 @@ function groundStep(dt, dir) {
     P.vel.x *= Math.max(0, 1 - 12 * dt); P.vel.z *= Math.max(0, 1 - 12 * dt);
   } else if (P.charge > 0 || P.tap) { P.tap = false; launch(dir); return; }
   else {
-    const tx = dir ? dir.x * CFG.WALK_SPEED : 0, tz = dir ? dir.z * CFG.WALK_SPEED : 0;
+    const sp = sneaking() ? CFG.SNEAK_SPEED : CFG.WALK_SPEED;
+    const tx = dir ? dir.x * sp : 0, tz = dir ? dir.z * sp : 0;
     const k = Math.min(1, 10 * dt);
     P.vel.x += (tx - P.vel.x) * k; P.vel.z += (tz - P.vel.z) * k;
   }
+  // sneaking (shift): never roll over an edge, slide along it instead (like in Minecraft)
+  if (sneaking() && P.coyote === 0) {
+    // look a little ahead so we stop slightly before the edge (prevents slipping over rounded edges)
+    const M = 0.15, y = P.pos.y;
+    const ax = P.vel.x * dt + Math.sign(P.vel.x) * M, az = P.vel.z * dt + Math.sign(P.vel.z) * M;
+    if (!hasGround(P.pos.x + ax, y, P.pos.z + az)) {
+      if (Math.abs(P.vel.x) > 0.01 && hasGround(P.pos.x + ax, y, P.pos.z)) P.vel.z = 0;
+      else if (Math.abs(P.vel.z) > 0.01 && hasGround(P.pos.x, y, P.pos.z + az)) P.vel.x = 0;
+      else { P.vel.x = 0; P.vel.z = 0; }
+    }
+  }
   P.vel.y = -2; // keep pressed onto the ground (follows small steps / slopes)
+  const ox = P.pos.x, oy = P.pos.y, oz = P.pos.z;
   P.pos.addScaledVector(P.vel, dt);
   resolveCollisions();
+  if (sneaking() && P.coyote === 0 && !hasGround(P.pos.x, P.pos.y, P.pos.z) && hasGround(ox, oy, oz)) {
+    P.pos.set(ox, oy, oz); P.vel.x = 0; P.vel.z = 0; // never get pushed over the edge while sneaking
+  }
   if (contacts.ground) {
     P.coyote = 0;
     P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
@@ -1482,13 +1500,21 @@ function groundStep(dt, dir) {
   if (P.pos.y < -60) respawn(true);
 }
 
+function sneaking() { return !!(keys.ShiftLeft || keys.ShiftRight); }
+const _gq = [];
+function hasGround(x, y, z) { // is there floor right below this point (within a small step)?
+  queryColliders(x - 0.01, z - 0.01, x + 0.01, z + 0.01, y - 1, y + 0.5, _gq);
+  for (const c of _gq) { const t = rayDownOBB(x, y + 0.25, z, c); if (t >= 0 && t <= 0.55) return true; }
+  return false;
+}
+
 function startGrind(n) {
   P.grind = true; P.grindT = 0; P.lostT = 0; P.wallN.copy(n);
 }
 function endGrind() { P.grind = false; P.grindCd = 0.15; }
 function grindUpdate(dt, g) {
   P.grindT += dt;
-  if (!(keys.ShiftLeft || keys.ShiftRight)) { kick(); return; }
+  if (!keys.Space) { kick(); return; }
   const n = P.wallN;
   const vn = P.vel.x * n.x + P.vel.z * n.z;
   P.vel.x -= n.x * vn; P.vel.z -= n.z * vn;
@@ -1719,11 +1745,13 @@ function updateVisuals(dt) {
   const chargeT = P.state === 'ground' ? P.charge : 0;
   P.chargeVis += (chargeT - P.chargeVis) * Math.min(1, (chargeT > P.chargeVis ? 14 : 22) * dt);
   const comp = P.chargeVis * P.chargeVis * (3 - 2 * P.chargeVis); // smoothstep
+  const sneakT = P.state === 'ground' && sneaking() ? 1 : 0;
+  P.sneakVis += (sneakT - P.sneakVis) * Math.min(1, 10 * dt);
   const shake = P.charge >= 1 && P.state === 'ground' ? (Math.random() - 0.5) * 0.012 : 0;
   let rollT = 0;
   if (P.grind) { const rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw); rollT = (P.wallN.x * rx + P.wallN.z * rz) * 0.14; }
   P.roll += (rollT - P.roll) * Math.min(1, 8 * dt);
-  camera.position.set(P.pos.x + shake, P.pos.y + CFG.EYE + P.dip - comp * CFG.CHARGE_DROP + shake, P.pos.z);
+  camera.position.set(P.pos.x + shake, P.pos.y + CFG.EYE + P.dip - comp * CFG.CHARGE_DROP - P.sneakVis * 0.18 + shake, P.pos.z);
   camera.rotation.set(P.pitch, P.yaw, P.roll);
   const fov = settings.fov + P.fovKick;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
@@ -1872,7 +1900,7 @@ function frame(now) {
 }
 resetRun();
 requestAnimationFrame(frame);
-window.__climbup = { P, WORLD, AREAS, flag, stats, step, keys, CFG, get state() { return state; }, get clock() { return clock; } };
+window.__climbup = { hasGround, P, WORLD, AREAS, flag, stats, step, keys, CFG, get state() { return state; }, get clock() { return clock; } };
 </script>
 </body>
 </html>

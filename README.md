@@ -10,7 +10,8 @@ Du hüpfst auf einem Pogo-Stick über einen Turm aus zusammengewürfeltem Krempe
 | Maus | Umschauen |
 | W A S D | Langsam rollen / Sprungrichtung |
 | Leertaste | Halten = Sprung aufladen (Blick sinkt nach unten), loslassen = springen; länger halten = höher |
-| Shift (an Wand) | Grinden; loslassen = von der Wand abstoßen |
+| Leertaste in der Luft (an Wand) | Grinden; loslassen = von der Wand abstoßen |
+| Shift | Schleichen: langsamer, man rollt nicht über Kanten (wie in Minecraft) |
 | E | Checkpoint-Flagge setzen (auf flachem Boden; in der Luft: bei der Landung) / aufheben |
 | R | Respawn (mit Bestätigung): an der Flagge, oder am Start wenn du sie trägst |
 | F | Mit der Ente reden |
