@@ -8,10 +8,10 @@ Du hüpfst auf einem Pogo-Stick über einen Turm aus zusammengewürfeltem Krempe
 | Taste | Aktion |
 |---|---|
 | Maus | Umschauen |
-| W A S D | Pogo-Stick neigen / Richtung |
-| Leertaste | Genau beim Aufkommen = hoher Sprung, perfektes Timing = noch höher |
+| W A S D | Langsam rollen / Sprungrichtung |
+| Leertaste | Halten = Sprung aufladen (Blick sinkt nach unten), loslassen = springen; länger halten = höher |
 | Shift (an Wand) | Grinden; loslassen = von der Wand abstoßen |
-| E | Checkpoint-Flagge setzen (bei der nächsten Landung auf flachem Boden) / aufheben |
+| E | Checkpoint-Flagge setzen (auf flachem Boden; in der Luft: bei der Landung) / aufheben |
 | R | Respawn (mit Bestätigung): an der Flagge, oder am Start wenn du sie trägst |
 | F | Mit der Ente reden |
 | Esc | Pause / Einstellungen |

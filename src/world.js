@@ -22,9 +22,9 @@ const AREAS = [
     sky: ['#01020a', '#0d1236'], fog: [200, 1400] },
 ];
 const TUTORIAL = {
-  2: ['LEERTASTE', 'genau beim Aufkommen', '= HOHER SPRUNG'],
-  5: ['PERFEKTES TIMING', '= noch höher!', 'Achte auf "PERFEKT!"'],
-  8: ['E = CHECKPOINT-FLAGGE', 'bei der nächsten Landung setzen.', 'R = Respawn an der Flagge'],
+  2: ['LEERTASTE HALTEN', '= Sprung aufladen', 'Länger halten = höher'],
+  5: ['VOLL AUFLADEN', 'für die ganz hohen Sprünge', 'Achte auf "MAX!"'],
+  8: ['E = CHECKPOINT-FLAGGE', 'auf flachem Boden setzen.', 'R = Respawn an der Flagge'],
   12: ['SHIFT an einer Wand', '= GRINDEN', 'Loslassen = abstoßen!'],
 };
 
@@ -77,7 +77,7 @@ function buildWorld() {
   let prev = { x: 0, y: 0.3, z: 0, yaw: 0, w: 7, d: 7 };
   let heading = 0;
   WORLD.path.push({ ...prev, area: 0 });
-  makeSign(['ClimbUP', 'WASD = Pogo-Stick lenken', 'Hüpf bis ganz nach oben!'], 2.5, 2.6, -3.2, -1, 0.35);
+  makeSign(['ClimbUP', 'LEERTASTE halten = aufladen', 'loslassen = springen!'], 4.5, 3.0, -5.0, -1, 0.6);
 
   function stepPlace(obj, cls, g, acc, area, isRest) {
     const v = cls === 'perfect' ? CFG.HOP_PERFECT : cls === 'high' ? CFG.HOP_HIGH : CFG.HOP_MOVE;

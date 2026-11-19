@@ -31,6 +31,9 @@
   #banner.show { opacity: 1; transition: opacity .3s; }
   #banner .small { font-size: 16px; letter-spacing: 6px; font-weight: 700; opacity: .9; }
   #banner .big { font-size: 56px; font-weight: 900; letter-spacing: 1px; }
+  #charge { position: absolute; top: calc(50% + 26px); left: 50%; transform: translateX(-50%); }
+  #chargeBar { width: 140px; height: 7px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.5); border-radius: 4px; overflow: hidden; }
+  #chargeBar div { height: 100%; width: 0; background: #fff; }
   #grind { position: absolute; top: 46%; left: 50%; transform: translateX(-50%); font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #ffd84a; }
   #grindBar { width: 120px; height: 5px; background: rgba(255,255,255,.25); border-radius: 3px; margin: 4px auto 0; overflow: hidden; }
   #grindBar div { height: 100%; background: #ffd84a; width: 100%; }
@@ -81,6 +84,7 @@
   <div id="feedback" class="shadow"></div>
   <div id="toast" class="shadow"></div>
   <div id="banner" class="shadow"><div class="small">GEBIET</div><div class="big">Schrottplatz</div></div>
+  <div id="charge" class="hidden"><div id="chargeBar"><div></div></div></div>
   <div id="grind" class="shadow hidden">GRIND<div id="grindBar"><div></div></div></div>
   <div id="flagInfo" class="shadow">🚩 Flagge: in der Hand</div>
   <div id="keysHint" class="shadow"><kbd>E</kbd> Flagge &nbsp; <kbd>R</kbd> Respawn &nbsp; <kbd>Esc</kbd> Pause</div>
@@ -92,10 +96,10 @@
     <div class="sub">Hüpf mit deinem Pogo-Stick über einen Berg aus geklautem Krempel bis ganz nach oben.<br>Dort oben wartet jemand auf dich…</div>
     <table class="keys">
       <tr><td><kbd>Maus</kbd></td><td>Umschauen</td></tr>
-      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Pogo-Stick neigen / Richtung</td></tr>
-      <tr><td><kbd>Leertaste</kbd></td><td>Genau beim Aufkommen drücken = <b>hoher Sprung</b> (perfektes Timing = noch höher)</td></tr>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Langsam rollen / Sprungrichtung</td></tr>
+      <tr><td><kbd>Leertaste</kbd></td><td><b>Halten</b> = Sprung aufladen, <b>loslassen</b> = springen. Länger halten = höher</td></tr>
       <tr><td><kbd>Shift</kbd></td><td>An einer Wand halten = <b>grinden</b>, loslassen = abstoßen</td></tr>
-      <tr><td><kbd>E</kbd></td><td>Checkpoint-Flagge setzen (nächste Landung, flacher Boden) / aufheben</td></tr>
+      <tr><td><kbd>E</kbd></td><td>Checkpoint-Flagge setzen (auf flachem Boden; in der Luft: bei der Landung) / aufheben</td></tr>
       <tr><td><kbd>R</kbd></td><td>Respawn an der Flagge (liegt sie nicht, zurück zum Start)</td></tr>
       <tr><td><kbd>F</kbd></td><td>Reden</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Pause / Einstellungen</td></tr>
@@ -163,15 +167,16 @@ const PI = Math.PI;
 const CFG = {
   G: 25,              // normal gravity
   G_SPACE: 15,        // gravity in space
-  HOP_IDLE: 4.2,      // tiny hop without input
-  HOP_MOVE: 7.5,      // normal hop while steering
-  HOP_HIGH: 12,       // space pressed around landing
-  HOP_PERFECT: 14.5,  // space pressed exactly at landing
+  // jump speeds: tap = HOP_MOVE, half charge ~ HOP_HIGH, full charge = HOP_PERFECT
+  // (the level generator plans the jumps with these three values)
+  HOP_MOVE: 7.5,
+  HOP_HIGH: 12,
+  HOP_PERFECT: 14.5,
+  CHARGE_TIME: 0.7,   // seconds of holding space for a full charge
+  CHARGE_DROP: 0.55,  // how far the view sinks at full charge
+  WALK_SPEED: 3.0,    // rolling around on the ground
   MOVE_SPEED: 6.5,    // horizontal speed when steering
   AIR_ACCEL: 10,      // air control strength
-  COMPRESS: 0.11,     // time the pogo spring is compressed on the ground
-  PRE_WIN: 0.22,      // space may be pressed this long before landing
-  PERFECT_WIN: 0.06,  // |press - landing| <= this -> perfect
   GRIND_SLOW: 2.0,    // seconds of slow sliding while grinding
   KICK_UP: 10,
   KICK_OUT: 4.5,
@@ -964,9 +969,9 @@ const AREAS = [
     sky: ['#01020a', '#0d1236'], fog: [200, 1400] },
 ];
 const TUTORIAL = {
-  2: ['LEERTASTE', 'genau beim Aufkommen', '= HOHER SPRUNG'],
-  5: ['PERFEKTES TIMING', '= noch höher!', 'Achte auf "PERFEKT!"'],
-  8: ['E = CHECKPOINT-FLAGGE', 'bei der nächsten Landung setzen.', 'R = Respawn an der Flagge'],
+  2: ['LEERTASTE HALTEN', '= Sprung aufladen', 'Länger halten = höher'],
+  5: ['VOLL AUFLADEN', 'für die ganz hohen Sprünge', 'Achte auf "MAX!"'],
+  8: ['E = CHECKPOINT-FLAGGE', 'auf flachem Boden setzen.', 'R = Respawn an der Flagge'],
   12: ['SHIFT an einer Wand', '= GRINDEN', 'Loslassen = abstoßen!'],
 };
 
@@ -1019,7 +1024,7 @@ function buildWorld() {
   let prev = { x: 0, y: 0.3, z: 0, yaw: 0, w: 7, d: 7 };
   let heading = 0;
   WORLD.path.push({ ...prev, area: 0 });
-  makeSign(['ClimbUP', 'WASD = Pogo-Stick lenken', 'Hüpf bis ganz nach oben!'], 2.5, 2.6, -3.2, -1, 0.35);
+  makeSign(['ClimbUP', 'LEERTASTE halten = aufladen', 'loslassen = springen!'], 4.5, 3.0, -5.0, -1, 0.6);
 
   function stepPlace(obj, cls, g, acc, area, isRest) {
     const v = cls === 'perfect' ? CFG.HOP_PERFECT : cls === 'high' ? CFG.HOP_HIGH : CFG.HOP_MOVE;
@@ -1366,7 +1371,7 @@ vm.position.copy(VM_BASE); vm.rotation.x = 0.12; vm.scale.setScalar(0.85);
 // ---------------- player state ----------------
 const P = {
   pos: WORLD.start.clone(), vel: new V3(), yaw: WORLD.startYaw, pitch: -0.05, roll: 0,
-  state: 'air', ct: 0, landTime: -9, lastSpace: -99, preH: new V3(),
+  state: 'air', charge: 0, chargeVis: 0, coyote: 0, tap: false,
   landPoint: new V3(), landN: new V3(0, 1, 0),
   grind: false, grindT: 0, wallN: new V3(), lostT: 0, grindCd: 0, kicked: false, lastKickN: new V3(),
   peakY: 0, dip: 0, dipV: 0, fovKick: 0,
@@ -1420,13 +1425,9 @@ function resolveCollisions() {
 function step(dt) {
   clock += dt;
   if (P.grindCd > 0) P.grindCd -= dt;
-  if (P.state === 'compress') {
-    P.ct += dt;
-    if (P.ct >= CFG.COMPRESS) launch();
-    return;
-  }
   const g = gravAt(P.pos.y);
   const dir = inputDir();
+  if (P.state === 'ground') { groundStep(dt, dir); return; }
   if (P.grind) grindUpdate(dt, g);
   else {
     P.vel.y -= g * dt;
@@ -1453,6 +1454,31 @@ function step(dt) {
     else if ((P.lostT += dt) > 0.12) endGrind();
   }
   if (contacts.ground && preVy <= 0.5) land(preVy);
+  if (P.pos.y < -60) respawn(true);
+}
+
+// standing on the pogo stick: roll slowly with WASD, hold space to charge, release to jump
+function groundStep(dt, dir) {
+  const space = keys.Space;
+  if (space) {
+    P.charge = Math.min(1, P.charge + dt / CFG.CHARGE_TIME);
+    P.vel.x *= Math.max(0, 1 - 12 * dt); P.vel.z *= Math.max(0, 1 - 12 * dt);
+  } else if (P.charge > 0 || P.tap) { P.tap = false; launch(dir); return; }
+  else {
+    const tx = dir ? dir.x * CFG.WALK_SPEED : 0, tz = dir ? dir.z * CFG.WALK_SPEED : 0;
+    const k = Math.min(1, 10 * dt);
+    P.vel.x += (tx - P.vel.x) * k; P.vel.z += (tz - P.vel.z) * k;
+  }
+  P.vel.y = -2; // keep pressed onto the ground (follows small steps / slopes)
+  P.pos.addScaledVector(P.vel, dt);
+  resolveCollisions();
+  if (contacts.ground) {
+    P.coyote = 0;
+    P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
+  } else if ((P.coyote += dt) > 0.06) { // rolled off an edge
+    P.state = 'air'; P.vel.y = 0; P.peakY = P.pos.y; P.charge = 0;
+  }
+  P.vel.y = 0;
   if (P.pos.y < -60) respawn(true);
 }
 
@@ -1484,36 +1510,29 @@ function kick() {
 function land(preVy) {
   if (P.grind) endGrind();
   P.kicked = false;
-  P.state = 'compress'; P.ct = 0; P.landTime = clock;
+  P.state = 'ground'; P.coyote = 0; P.charge = 0; P.tap = false;
   P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
-  P.preH.set(P.vel.x, 0, P.vel.z);
-  P.vel.set(0, 0, 0);
+  P.vel.set(P.vel.x * 0.3, 0, P.vel.z * 0.3);
   const impact = -preVy;
   P.dipV -= Math.min(4.5, 0.6 + impact * 0.13);
   if (P.peakY - P.pos.y > 9) { stats.falls++; if (P.peakY - P.pos.y > 25) toast('Autsch. ' + Math.round(P.peakY - P.pos.y) + ' m runtergefallen.'); }
   P.peakY = P.pos.y;
   if (flag.pending) { flag.pending = false; tryPlaceFlag(); }
 }
-function launch() {
-  const dir = inputDir();
-  let type = 'move';
-  const sp = P.lastSpace;
-  if (sp >= P.landTime - CFG.PRE_WIN && sp <= clock + 1e-6) {
-    type = Math.abs(sp - P.landTime) <= CFG.PERFECT_WIN ? 'perfect' : 'high';
-    P.lastSpace = -99;
-  }
-  const vy = type === 'perfect' ? CFG.HOP_PERFECT : type === 'high' ? CFG.HOP_HIGH : dir ? CFG.HOP_MOVE : CFG.HOP_IDLE;
+function launch(dir) {
+  const c = P.charge;
+  const vy = CFG.HOP_MOVE + (CFG.HOP_PERFECT - CFG.HOP_MOVE) * c;
   if (dir) P.vel.set(dir.x * CFG.MOVE_SPEED, vy, dir.z * CFG.MOVE_SPEED);
-  else P.vel.set(P.preH.x * 0.25, vy, P.preH.z * 0.25);
-  P.state = 'air'; P.peakY = P.pos.y; P.pos.y += 0.005;
-  if (type === 'perfect') { feedback('PERFEKT!', '#ffd84a'); P.fovKick = 9; }
-  else if (type === 'high') { feedback('HOCH!', '#ffffff'); P.fovKick = 5; }
+  else P.vel.set(0, vy, 0);
+  P.state = 'air'; P.charge = 0; P.peakY = P.pos.y; P.pos.y += 0.005;
+  P.dipV += 1.5 + c * 2.5; P.fovKick = c * 8;
+  if (c >= 1) feedback('MAX!', '#ffd84a');
 }
 
 function respawn(auto) {
   if (!flag.carried) P.pos.copy(flag.pos).add(new V3(0, 0.05, 0));
   else P.pos.copy(WORLD.start);
-  P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y;
+  P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
   stats.respawns++;
   toast(auto ? 'Aus der Welt gefallen – Respawn.' : (flag.carried ? 'Zurück zum Start.' : 'Respawn an der Flagge.'));
   closeDialog();
@@ -1528,7 +1547,7 @@ function tryPlaceFlag() {
 }
 function pressE() {
   if (flag.carried) {
-    if (P.state === 'compress') { tryPlaceFlag(); return; }
+    if (P.state === 'ground') { tryPlaceFlag(); return; }
     flag.pending = !flag.pending;
     toast(flag.pending ? 'Flagge wird bei der nächsten Landung gesetzt…' : 'Flagge setzen abgebrochen.');
   } else {
@@ -1653,6 +1672,9 @@ function updateHUD(dt) {
   if (!dlg.open && nearDuck()) prompt = '<kbd>F</kbd> Mit der Ente reden';
   else if (!flag.carried && Math.hypot(P.pos.x - flag.pos.x, P.pos.z - flag.pos.z) < 2.6 && Math.abs(P.pos.y - flag.pos.y) < 3) prompt = '<kbd>E</kbd> Flagge aufheben';
   const pe = $('prompt'); pe.classList.toggle('hidden', !prompt); if (prompt && pe.innerHTML !== prompt) pe.innerHTML = prompt;
+  const ch = P.state === 'ground' && P.charge > 0;
+  $('charge').classList.toggle('hidden', !ch);
+  if (ch) { const cb = $('chargeBar').firstChild; cb.style.width = Math.round(P.charge * 100) + '%'; cb.style.background = P.charge >= 1 ? '#ffd84a' : '#ffffff'; }
   $('grind').classList.toggle('hidden', !P.grind);
   if (P.grind) $('grindBar').firstChild.style.width = Math.max(0, 100 - P.grindT / CFG.GRIND_SLOW * 100) + '%';
   if ((toastT -= dt) <= 0) $('toast').classList.remove('show');
@@ -1693,11 +1715,15 @@ function updateVisuals(dt) {
   P.dip += P.dipV * dt;
   P.dip = Math.max(-0.45, Math.min(0.2, P.dip));
   P.fovKick += (0 - P.fovKick) * Math.min(1, 4 * dt);
-  const comp = P.state === 'compress' ? Math.sin(Math.min(1, P.ct / CFG.COMPRESS) * PI) : 0;
+  // charging: the view sinks while the spring is pressed down, snaps back on release
+  const chargeT = P.state === 'ground' ? P.charge : 0;
+  P.chargeVis += (chargeT - P.chargeVis) * Math.min(1, (chargeT > P.chargeVis ? 14 : 22) * dt);
+  const comp = P.chargeVis * P.chargeVis * (3 - 2 * P.chargeVis); // smoothstep
+  const shake = P.charge >= 1 && P.state === 'ground' ? (Math.random() - 0.5) * 0.012 : 0;
   let rollT = 0;
   if (P.grind) { const rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw); rollT = (P.wallN.x * rx + P.wallN.z * rz) * 0.14; }
   P.roll += (rollT - P.roll) * Math.min(1, 8 * dt);
-  camera.position.set(P.pos.x, P.pos.y + CFG.EYE + P.dip - comp * 0.12, P.pos.z);
+  camera.position.set(P.pos.x + shake, P.pos.y + CFG.EYE + P.dip - comp * CFG.CHARGE_DROP + shake, P.pos.z);
   camera.rotation.set(P.pitch, P.yaw, P.roll);
   const fov = settings.fov + P.fovKick;
   if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
@@ -1706,8 +1732,8 @@ function updateVisuals(dt) {
 
   // view model: shaft compresses, slight sway
   const vy = P.state === 'air' ? T.MathUtils.clamp(P.vel.y * 0.006, -0.05, 0.05) : 0;
-  vm.position.set(VM_BASE.x + P.roll * 0.3, VM_BASE.y + comp * 0.07 - vy + P.dip * 0.15, VM_BASE.z);
-  vm.rotation.set(0.12 + comp * 0.12, 0, -P.roll * 0.8);
+  vm.position.set(VM_BASE.x + P.roll * 0.3, VM_BASE.y + comp * 0.09 - vy + P.dip * 0.15, VM_BASE.z + comp * 0.05);
+  vm.rotation.set(0.12 + comp * 0.35, 0, -P.roll * 0.8);
   vmFlag.visible = flag.carried;
 
   // landing indicator
@@ -1741,7 +1767,7 @@ function updateVisuals(dt) {
 // ---------------- game flow ----------------
 function resetRun() {
   P.pos.copy(WORLD.start); P.vel.set(0, 0, 0); P.yaw = WORLD.startYaw; P.pitch = -0.05;
-  P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.lastSpace = -99;
+  P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
   flag.carried = true; flag.pending = false; flagGroup.visible = false;
   stats.falls = 0; stats.respawns = 0;
   runTime = 0; timerRunning = false; maxArea = 0;
@@ -1807,7 +1833,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   switch (e.code) {
-    case 'Space': P.lastSpace = clock; break;
+    case 'Space': if (P.state === 'ground') P.tap = true; break; // very short taps between two physics steps still jump
     case 'KeyE': pressE(); break;
     case 'KeyR': setConfirm(true); break;
     case 'KeyF': if (!dlg.open && nearDuck()) openDialog('start'); break;

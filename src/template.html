@@ -31,6 +31,9 @@
   #banner.show { opacity: 1; transition: opacity .3s; }
   #banner .small { font-size: 16px; letter-spacing: 6px; font-weight: 700; opacity: .9; }
   #banner .big { font-size: 56px; font-weight: 900; letter-spacing: 1px; }
+  #charge { position: absolute; top: calc(50% + 26px); left: 50%; transform: translateX(-50%); }
+  #chargeBar { width: 140px; height: 7px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.5); border-radius: 4px; overflow: hidden; }
+  #chargeBar div { height: 100%; width: 0; background: #fff; }
   #grind { position: absolute; top: 46%; left: 50%; transform: translateX(-50%); font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #ffd84a; }
   #grindBar { width: 120px; height: 5px; background: rgba(255,255,255,.25); border-radius: 3px; margin: 4px auto 0; overflow: hidden; }
   #grindBar div { height: 100%; background: #ffd84a; width: 100%; }
@@ -81,6 +84,7 @@
   <div id="feedback" class="shadow"></div>
   <div id="toast" class="shadow"></div>
   <div id="banner" class="shadow"><div class="small">GEBIET</div><div class="big">Schrottplatz</div></div>
+  <div id="charge" class="hidden"><div id="chargeBar"><div></div></div></div>
   <div id="grind" class="shadow hidden">GRIND<div id="grindBar"><div></div></div></div>
   <div id="flagInfo" class="shadow">🚩 Flagge: in der Hand</div>
   <div id="keysHint" class="shadow"><kbd>E</kbd> Flagge &nbsp; <kbd>R</kbd> Respawn &nbsp; <kbd>Esc</kbd> Pause</div>
@@ -92,10 +96,10 @@
     <div class="sub">Hüpf mit deinem Pogo-Stick über einen Berg aus geklautem Krempel bis ganz nach oben.<br>Dort oben wartet jemand auf dich…</div>
     <table class="keys">
       <tr><td><kbd>Maus</kbd></td><td>Umschauen</td></tr>
-      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Pogo-Stick neigen / Richtung</td></tr>
-      <tr><td><kbd>Leertaste</kbd></td><td>Genau beim Aufkommen drücken = <b>hoher Sprung</b> (perfektes Timing = noch höher)</td></tr>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Langsam rollen / Sprungrichtung</td></tr>
+      <tr><td><kbd>Leertaste</kbd></td><td><b>Halten</b> = Sprung aufladen, <b>loslassen</b> = springen. Länger halten = höher</td></tr>
       <tr><td><kbd>Shift</kbd></td><td>An einer Wand halten = <b>grinden</b>, loslassen = abstoßen</td></tr>
-      <tr><td><kbd>E</kbd></td><td>Checkpoint-Flagge setzen (nächste Landung, flacher Boden) / aufheben</td></tr>
+      <tr><td><kbd>E</kbd></td><td>Checkpoint-Flagge setzen (auf flachem Boden; in der Luft: bei der Landung) / aufheben</td></tr>
       <tr><td><kbd>R</kbd></td><td>Respawn an der Flagge (liegt sie nicht, zurück zum Start)</td></tr>
       <tr><td><kbd>F</kbd></td><td>Reden</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Pause / Einstellungen</td></tr>

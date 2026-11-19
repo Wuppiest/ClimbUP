@@ -9,15 +9,16 @@ const PI = Math.PI;
 const CFG = {
   G: 25,              // normal gravity
   G_SPACE: 15,        // gravity in space
-  HOP_IDLE: 4.2,      // tiny hop without input
-  HOP_MOVE: 7.5,      // normal hop while steering
-  HOP_HIGH: 12,       // space pressed around landing
-  HOP_PERFECT: 14.5,  // space pressed exactly at landing
+  // jump speeds: tap = HOP_MOVE, half charge ~ HOP_HIGH, full charge = HOP_PERFECT
+  // (the level generator plans the jumps with these three values)
+  HOP_MOVE: 7.5,
+  HOP_HIGH: 12,
+  HOP_PERFECT: 14.5,
+  CHARGE_TIME: 0.7,   // seconds of holding space for a full charge
+  CHARGE_DROP: 0.55,  // how far the view sinks at full charge
+  WALK_SPEED: 3.0,    // rolling around on the ground
   MOVE_SPEED: 6.5,    // horizontal speed when steering
   AIR_ACCEL: 10,      // air control strength
-  COMPRESS: 0.11,     // time the pogo spring is compressed on the ground
-  PRE_WIN: 0.22,      // space may be pressed this long before landing
-  PERFECT_WIN: 0.06,  // |press - landing| <= this -> perfect
   GRIND_SLOW: 2.0,    // seconds of slow sliding while grinding
   KICK_UP: 10,
   KICK_OUT: 4.5,
