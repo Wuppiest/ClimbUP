@@ -2,7 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>ClimbUP</title>
 <style>
   * { box-sizing: border-box; }
@@ -68,6 +71,36 @@
   #dialog .opts { margin-top: 12px; display: grid; gap: 6px; }
   #dialog .opt { font-size: 17px; font-weight: 600; padding: 6px 10px; background: rgba(0,0,0,.06); border-radius: 8px; }
   #dialog .opt kbd { background: #2b2210; color: #ffe066; border-color: #000; margin-right: 8px; }
+  #dialog .opt { cursor: pointer; }
+  #confirm .tbtns { margin-top: 14px; display: none; gap: 12px; justify-content: center; }
+  body.touch #confirm .tbtns { display: flex; }
+  body.touch #confirm .opts { display: none; }
+
+  /* ---------- touch controls (iPad / phone) ---------- */
+  body.touch { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; }
+  #touch { position: fixed; inset: 0; z-index: 5; display: none; touch-action: none; }
+  body.touch.playing #touch { display: block; }
+  body.touch #keysHint { display: none; }
+  body.touch #area { left: 76px; top: 20px; }
+  body.touch #flagInfo { left: 76px; top: 48px; bottom: auto; font-size: 14px; padding: 5px 10px; }
+  #stickBase { position: absolute; width: 130px; height: 130px; margin: -65px 0 0 -65px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35); display: none; pointer-events: none; }
+  #stickKnob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: rgba(255,255,255,.55); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  #stickHint { position: absolute; left: 7%; bottom: 9%; width: 120px; height: 120px; border-radius: 50%; border: 2px dashed rgba(255,255,255,.3); pointer-events: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: rgba(255,255,255,.55); text-align: center; }
+  .tbtn { position: absolute; display: flex; align-items: center; justify-content: center; flex-direction: column; border-radius: 50%; color: #fff; font-weight: 900; font-size: 13px; letter-spacing: .5px; background: rgba(20,24,40,.45); border: 2px solid rgba(255,255,255,.45); box-shadow: 0 3px 10px rgba(0,0,0,.25); touch-action: none; -webkit-tap-highlight-color: transparent; }
+  .tbtn .ic { font-size: 24px; line-height: 1; margin-bottom: 2px; }
+  .tbtn.down { background: rgba(255,216,74,.6); border-color: #ffd84a; transform: scale(.94); }
+  .tbtn.on { background: rgba(255,216,74,.55); border-color: #ffd84a; }
+  #tJump { right: max(28px, env(safe-area-inset-right)); bottom: 34px; width: 128px; height: 128px; font-size: 15px; }
+  #tJump .ic { font-size: 34px; }
+  #tSneak { right: calc(max(28px, env(safe-area-inset-right)) + 146px); bottom: 34px; width: 76px; height: 76px; }
+  #tFlag { right: calc(max(28px, env(safe-area-inset-right)) + 30px); bottom: 182px; width: 68px; height: 68px; }
+  #tRespawn { right: calc(max(28px, env(safe-area-inset-right)) + 118px); bottom: 150px; width: 60px; height: 60px; font-size: 11px; }
+  #tPause { left: max(12px, env(safe-area-inset-left)); top: 12px; width: 52px; height: 52px; border-radius: 14px; }
+  #tTalk { left: 50%; bottom: 40px; transform: translateX(-50%); width: auto; height: 56px; padding: 0 24px; border-radius: 28px; font-size: 17px; flex-direction: row; gap: 8px; background: rgba(242,194,0,.8); color: #2b2210; border-color: #fff; }
+  #tTalk.down { transform: translateX(-50%) scale(.95); }
+  .touchOnly { display: none; }
+  body.touch .touchOnly { display: block; }
+  body.touch .kbOnly { display: none; }
   #dialog .count { font-size: 64px; font-weight: 900; text-align: center; color: #d23; }
 </style>
 </head>
@@ -94,7 +127,7 @@
   <div class="panel">
     <h1 class="logo">Climb<span>UP</span></h1>
     <div class="sub">Hüpf mit deinem Pogo-Stick über einen Berg aus geklautem Krempel bis ganz nach oben.<br>Dort oben wartet jemand auf dich…</div>
-    <table class="keys">
+    <table class="keys kbOnly">
       <tr><td><kbd>Maus</kbd></td><td>Umschauen</td></tr>
       <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Langsam rollen / Sprungrichtung</td></tr>
       <tr><td><kbd>Leertaste</kbd></td><td><b>Halten</b> = Sprung aufladen, <b>loslassen</b> = springen. Länger halten = höher</td></tr>
@@ -105,7 +138,16 @@
       <tr><td><kbd>F</kbd></td><td>Reden</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Pause / Einstellungen</td></tr>
     </table>
-    <button class="btn" id="startBtn">Klicken zum Starten</button>
+    <table class="keys touchOnly">
+      <tr><td><b>Linker Daumen</b></td><td>Joystick: rollen / Sprungrichtung</td></tr>
+      <tr><td><b>Rechts wischen</b></td><td>Umschauen</td></tr>
+      <tr><td><b>⤒ SPRUNG</b></td><td><b>Halten</b> = aufladen, <b>loslassen</b> = springen. In der Luft an einer Wand halten = <b>grinden</b></td></tr>
+      <tr><td><b>🦶 SCHLEICH</b></td><td>An/aus: langsamer, du rollst nicht über Kanten</td></tr>
+      <tr><td><b>🚩 FLAGGE</b></td><td>Checkpoint setzen / aufheben</td></tr>
+      <tr><td><b>↺ RESPAWN</b></td><td>Zurück zur Flagge (oder zum Start)</td></tr>
+      <tr><td colspan="2" style="text-align:center;opacity:.75;padding-top:8px">Tipp: Querformat. Für Vollbild in Safari „Zum Home-Bildschirm“ hinzufügen.</td></tr>
+    </table>
+    <button class="btn" id="startBtn"><span class="kbOnly">Klicken zum Starten</span><span class="touchOnly">Tippen zum Starten</span></button>
     <div class="pb" id="startBest"></div>
   </div>
 </div>
@@ -141,6 +183,18 @@
 <div id="confirm" class="hidden">
   <div id="confirmText">Wirklich respawnen?</div>
   <div class="opts"><kbd>Enter</kbd> / <kbd>J</kbd> Ja &nbsp;&nbsp; <kbd>N</kbd> / <kbd>R</kbd> Nein</div>
+  <div class="tbtns"><button class="btn" id="confYes">Ja</button><button class="btn grey" id="confNo">Nein</button></div>
+</div>
+
+<div id="touch">
+  <div id="stickHint">Joystick<br>(Daumen<br>hier hin)</div>
+  <div id="stickBase"><div id="stickKnob"></div></div>
+  <div class="tbtn" id="tPause"><span class="ic">⏸</span></div>
+  <div class="tbtn" id="tRespawn"><span class="ic">↺</span>RESPAWN</div>
+  <div class="tbtn" id="tFlag"><span class="ic">🚩</span>FLAGGE</div>
+  <div class="tbtn" id="tSneak"><span class="ic">🦶</span>SCHLEICH</div>
+  <div class="tbtn" id="tJump"><span class="ic">⤒</span>SPRUNG</div>
+  <div class="tbtn hidden" id="tTalk">🦆 Mit der Ente reden</div>
 </div>
 
 <div id="dialog" class="hidden">
@@ -986,7 +1040,9 @@ function exitDist(p, ux, uz) {
 }
 function landTime(v, dy, g) { return (v + Math.sqrt(Math.max(0, v * v - 2 * g * dy))) / g; }
 
+const TOUCH_DEVICE = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints > 0 && 'ontouchstart' in window);
 function makeSign(lines, x, y, z, faceX, faceZ, accent = '#ffb52e') {
+  if (TOUCH_DEVICE) lines = lines.map((l) => l.replace('LEERTASTE', 'SPRUNG-KNOPF').replace('E = ', '🚩 = ').replace('R = ', '↺ = ').replace(' (F)', ''));
   const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 512;
   const c = cv.getContext('2d');
   c.fillStyle = '#1b1f33'; c.strokeStyle = accent; c.lineWidth = 22;
@@ -1391,13 +1447,16 @@ const contacts = { ground: null, groundPoint: new V3(), wall: null };
 const _g = new V3(), _w = new V3();
 
 function gravAt(y) { return y > AREAS[5].y0 - 4 ? CFG.G_SPACE : CFG.G; }
+// touch joystick state (filled by the touch controls)
+const TOUCH = { enabled: false, mx: 0, my: 0 };
 function inputDir() {
-  const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  let f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), m = 1;
+  if (!f && !r && (TOUCH.mx || TOUCH.my)) { f = TOUCH.my; r = TOUCH.mx; m = Math.min(1, Math.hypot(f, r)); }
   if (!f && !r) return null;
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
   const x = -sy * f + cy * r, z = -cy * f - sy * r;
   const l = Math.hypot(x, z);
-  return { x: x / l, z: z / l };
+  return { x: x / l, z: z / l, m };
 }
 
 // ---------------- physics ----------------
@@ -1467,7 +1526,7 @@ function groundStep(dt, dir) {
     P.vel.x *= Math.max(0, 1 - 12 * dt); P.vel.z *= Math.max(0, 1 - 12 * dt);
   } else if (P.charge > 0 || P.tap) { P.tap = false; launch(dir); return; }
   else {
-    const sp = sneaking() ? CFG.SNEAK_SPEED : CFG.WALK_SPEED;
+    const sp = (sneaking() ? CFG.SNEAK_SPEED : CFG.WALK_SPEED) * (dir ? dir.m : 1);
     const tx = dir ? dir.x * sp : 0, tz = dir ? dir.z * sp : 0;
     const k = Math.min(1, 10 * dt);
     P.vel.x += (tx - P.vel.x) * k; P.vel.z += (tz - P.vel.z) * k;
@@ -1614,7 +1673,7 @@ function openDialog(nodeName) {
   dlg.open = true; dlg.phase = 'choose'; dlg.node = nodeName; dlg.opts = shuffle(node.opts.slice());
   $('dialog').classList.remove('hidden');
   $('dlgText').textContent = node.text;
-  $('dlgOpts').innerHTML = dlg.opts.map((o, i) => '<div class="opt"><kbd>' + (i + 1) + '</kbd>' + o.t + '</div>').join('');
+  $('dlgOpts').innerHTML = dlg.opts.map((o, i) => '<div class="opt" data-i="' + i + '"><kbd>' + (i + 1) + '</kbd>' + o.t + '</div>').join('');
 }
 function closeDialog() { dlg.open = false; dlg.phase = 'idle'; $('dialog').classList.add('hidden'); }
 function chooseOption(i) {
@@ -1695,8 +1754,8 @@ function updateHUD(dt) {
   else { const dy = Math.round(flag.pos.y - P.pos.y); fi.textContent = '🚩 Flagge: gesetzt (' + (dy > 0 ? '+' : '') + dy + ' m)'; }
   fi.classList.toggle('pending', flag.pending);
   let prompt = '';
-  if (!dlg.open && nearDuck()) prompt = '<kbd>F</kbd> Mit der Ente reden';
-  else if (!flag.carried && Math.hypot(P.pos.x - flag.pos.x, P.pos.z - flag.pos.z) < 2.6 && Math.abs(P.pos.y - flag.pos.y) < 3) prompt = '<kbd>E</kbd> Flagge aufheben';
+  if (!dlg.open && nearDuck()) prompt = TOUCH.enabled ? '' : '<kbd>F</kbd> Mit der Ente reden';
+  else if (!flag.carried && Math.hypot(P.pos.x - flag.pos.x, P.pos.z - flag.pos.z) < 2.6 && Math.abs(P.pos.y - flag.pos.y) < 3) prompt = TOUCH.enabled ? '🚩-Knopf: Flagge aufheben' : '<kbd>E</kbd> Flagge aufheben';
   const pe = $('prompt'); pe.classList.toggle('hidden', !prompt); if (prompt && pe.innerHTML !== prompt) pe.innerHTML = prompt;
   const ch = P.state === 'ground' && P.charge > 0;
   $('charge').classList.toggle('hidden', !ch);
@@ -1814,7 +1873,11 @@ function win() {
   $('win').classList.remove('hidden');
   if (document.pointerLockElement) document.exitPointerLock();
 }
-function lock() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ } }
+function pauseGame() {
+  paused = true; $('pause').classList.remove('hidden'); setConfirm(false);
+  for (const k in keys) keys[k] = false;
+}
+function lock() { if (TOUCH.enabled) return; try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ } }
 function startGame() { $('start').classList.add('hidden'); $('hud').classList.remove('hidden'); state = 'play'; paused = false; lock(); }
 
 $('startBtn').onclick = startGame;
@@ -1822,9 +1885,9 @@ $('resumeBtn').onclick = () => { $('pause').classList.add('hidden'); paused = fa
 $('restartBtn').onclick = () => { resetRun(); $('pause').classList.add('hidden'); paused = false; lock(); };
 $('againBtn').onclick = () => { resetRun(); $('win').classList.add('hidden'); state = 'play'; paused = false; lock(); };
 $('resetBestBtn').onclick = () => { best = null; store.set('best', null); updateBest(); };
-canvas.addEventListener('click', () => { if (state === 'play' && !document.pointerLockElement) { $('pause').classList.add('hidden'); paused = false; lock(); } });
+canvas.addEventListener('click', () => { if (state === 'play' && !TOUCH.enabled && !document.pointerLockElement) { $('pause').classList.add('hidden'); paused = false; lock(); } });
 document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && state === 'play') { paused = true; $('pause').classList.remove('hidden'); setConfirm(false); }
+  if (!document.pointerLockElement && state === 'play' && !TOUCH.enabled) pauseGame();
 });
 // settings UI
 function applySettings() {
@@ -1849,18 +1912,21 @@ document.addEventListener('mousedown', () => { if (state === 'play' && !paused) 
 window.addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
   if (state === 'win' && e.code === 'Enter') { $('againBtn').onclick(); return; }
+  pressKey(e.code, e.repeat);
+});
+// shared by keyboard and touch buttons
+function pressKey(code, repeat = false) {
   if (state !== 'play' || paused) return;
-  const first = !e.repeat;
-  if (first) dialogInterrupt();
-  keys[e.code] = true;
-  if (!first) return;
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) timerRunning = true;
+  if (!repeat) dialogInterrupt();
+  keys[code] = true;
+  if (repeat) return;
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(code)) timerRunning = true;
   if (confirmOpen) {
-    if (e.code === 'Enter' || e.code === 'KeyJ' || e.code === 'KeyY') { setConfirm(false); respawn(false); }
-    else if (e.code === 'KeyN' || e.code === 'KeyR' || e.code === 'Backspace') setConfirm(false);
+    if (code === 'Enter' || code === 'KeyJ' || code === 'KeyY') { setConfirm(false); respawn(false); }
+    else if (code === 'KeyN' || code === 'KeyR' || code === 'Backspace') setConfirm(false);
     return;
   }
-  switch (e.code) {
+  switch (code) {
     case 'Space': if (P.state === 'ground') P.tap = true; break; // very short taps between two physics steps still jump
     case 'KeyE': pressE(); break;
     case 'KeyR': setConfirm(true); break;
@@ -1869,8 +1935,9 @@ window.addEventListener('keydown', (e) => {
     case 'Digit2': case 'Numpad2': chooseOption(1); break;
     case 'Digit3': case 'Numpad3': chooseOption(2); break;
   }
-});
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+}
+function releaseKey(code) { keys[code] = false; }
+window.addEventListener('keyup', (e) => releaseKey(e.code));
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1894,6 +1961,7 @@ function frame(now) {
   updateEnvironment();
   updateVisuals(dt);
   if (state === 'play') updateHUD(dt);
+  if (TOUCH.update) TOUCH.update();
   renderer.clear();
   renderer.render(scene, camera);
   if (state !== 'menu') { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
@@ -1901,6 +1969,133 @@ function frame(now) {
 resetRun();
 requestAnimationFrame(frame);
 window.__climbup = { hasGround, P, WORLD, AREAS, flag, stats, step, keys, CFG, get state() { return state; }, get clock() { return clock; } };
+
+// ============================================================
+//  ClimbUP – touch controls (iPad / phones)
+//  left thumb: floating joystick, right side: drag to look,
+//  buttons: jump (hold = charge / grind), sneak (toggle), flag, respawn, pause, talk
+// ============================================================
+(function () {
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const isTouch = coarse || (navigator.maxTouchPoints > 0 && 'ontouchstart' in window);
+
+  function enableTouch() {
+    if (TOUCH.enabled) return;
+    TOUCH.enabled = true;
+    document.body.classList.add('touch');
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // keep tablets smooth
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+  if (isTouch) enableTouch();
+  window.addEventListener('touchstart', enableTouch, { passive: true, capture: true });
+  document.addEventListener('gesturestart', (e) => e.preventDefault()); // no pinch zoom on iOS
+
+  const layer = $('touch'), base = $('stickBase'), knob = $('stickKnob'), hint = $('stickHint');
+  const RADIUS = 60, DEAD = 0.18;
+  let stickId = null, sx = 0, sy = 0, lookId = null, lx = 0, ly = 0, moved = false;
+  const live = () => state === 'play' && !paused;
+
+  function resetStick() {
+    stickId = null; moved = false; TOUCH.mx = 0; TOUCH.my = 0;
+    base.style.display = 'none'; hint.style.display = '';
+  }
+
+  layer.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.target.closest && t.target.closest('.tbtn')) continue;
+      if (t.clientX < window.innerWidth * 0.45 && stickId === null) {
+        stickId = t.identifier; sx = t.clientX; sy = t.clientY;
+        base.style.left = sx + 'px'; base.style.top = sy + 'px'; base.style.display = 'block';
+        knob.style.transform = ''; hint.style.display = 'none';
+      } else if (lookId === null) {
+        lookId = t.identifier; lx = t.clientX; ly = t.clientY;
+      }
+    }
+  }, { passive: false });
+
+  layer.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) {
+        let dx = t.clientX - sx, dy = t.clientY - sy;
+        const l = Math.hypot(dx, dy);
+        if (l > RADIUS) { dx *= RADIUS / l; dy *= RADIUS / l; }
+        knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+        const mx = dx / RADIUS, my = -dy / RADIUS;
+        if (Math.hypot(mx, my) < DEAD) { TOUCH.mx = 0; TOUCH.my = 0; }
+        else {
+          TOUCH.mx = mx; TOUCH.my = my;
+          if (live()) { if (!moved) { moved = true; dialogInterrupt(); } timerRunning = true; }
+        }
+      } else if (t.identifier === lookId) {
+        if (live()) {
+          const s = 0.0048 * settings.sens;
+          P.yaw -= (t.clientX - lx) * s;
+          P.pitch = T.MathUtils.clamp(P.pitch - (t.clientY - ly) * s, -1.55, 1.55);
+        }
+        lx = t.clientX; ly = t.clientY;
+      }
+    }
+  }, { passive: false });
+
+  const endTouch = (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) resetStick();
+      if (t.identifier === lookId) lookId = null;
+    }
+  };
+  layer.addEventListener('touchend', endTouch);
+  layer.addEventListener('touchcancel', endTouch);
+
+  function button(id, onDown, onUp) {
+    const el = $(id);
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      el.classList.add('down'); onDown();
+    }, { passive: false });
+    const up = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      el.classList.remove('down'); if (onUp) onUp();
+    };
+    el.addEventListener('touchend', up, { passive: false });
+    el.addEventListener('touchcancel', up, { passive: false });
+    el.addEventListener('mousedown', (e) => { e.preventDefault(); onDown(); }); // also clickable for testing
+    el.addEventListener('mouseup', () => { if (onUp) onUp(); });
+  }
+  button('tJump', () => pressKey('Space'), () => releaseKey('Space'));
+  button('tSneak', () => { if (live()) keys.ShiftLeft = !keys.ShiftLeft; });
+  button('tFlag', () => pressKey('KeyE'), () => releaseKey('KeyE'));
+  button('tRespawn', () => pressKey('KeyR'), () => releaseKey('KeyR'));
+  button('tTalk', () => pressKey('KeyF'), () => releaseKey('KeyF'));
+  button('tPause', () => { if (live()) pauseGame(); });
+
+  // tappable respawn confirmation and duck answers (work with mouse too)
+  $('confYes').addEventListener('click', () => { if (confirmOpen) { setConfirm(false); respawn(false); } });
+  $('confNo').addEventListener('click', () => setConfirm(false));
+  $('dlgOpts').addEventListener('click', (e) => { const o = e.target.closest('.opt'); if (o) chooseOption(+o.dataset.i); });
+
+  // try real fullscreen on tablets when the game starts
+  $('startBtn').addEventListener('click', () => {
+    if (!TOUCH.enabled) return;
+    const el = document.documentElement, fs = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (fs) { try { const p = fs.call(el); if (p && p.catch) p.catch(() => {}); } catch (err) { /* not supported */ } }
+  });
+
+  // per-frame UI state (called from the main loop)
+  let lastPlaying = null;
+  TOUCH.update = function () {
+    const playing = live();
+    if (playing !== lastPlaying) {
+      document.body.classList.toggle('playing', playing);
+      if (!playing) { resetStick(); lookId = null; for (const id of ['tJump', 'tFlag', 'tRespawn', 'tTalk']) $(id).classList.remove('down'); }
+      lastPlaying = playing;
+    }
+    if (!TOUCH.enabled || !playing) return;
+    $('tSneak').classList.toggle('on', sneaking());
+    $('tTalk').classList.toggle('hidden', dlg.open || !nearDuck());
+  };
+})();
 </script>
 </body>
 </html>

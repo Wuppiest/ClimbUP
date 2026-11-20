@@ -37,7 +37,9 @@ function exitDist(p, ux, uz) {
 }
 function landTime(v, dy, g) { return (v + Math.sqrt(Math.max(0, v * v - 2 * g * dy))) / g; }
 
+const TOUCH_DEVICE = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints > 0 && 'ontouchstart' in window);
 function makeSign(lines, x, y, z, faceX, faceZ, accent = '#ffb52e') {
+  if (TOUCH_DEVICE) lines = lines.map((l) => l.replace('LEERTASTE', 'SPRUNG-KNOPF').replace('E = ', '🚩 = ').replace('R = ', '↺ = ').replace(' (F)', ''));
   const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 512;
   const c = cv.getContext('2d');
   c.fillStyle = '#1b1f33'; c.strokeStyle = accent; c.lineWidth = 22;

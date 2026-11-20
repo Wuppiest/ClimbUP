@@ -2,7 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>ClimbUP</title>
 <style>
   * { box-sizing: border-box; }
@@ -68,6 +71,36 @@
   #dialog .opts { margin-top: 12px; display: grid; gap: 6px; }
   #dialog .opt { font-size: 17px; font-weight: 600; padding: 6px 10px; background: rgba(0,0,0,.06); border-radius: 8px; }
   #dialog .opt kbd { background: #2b2210; color: #ffe066; border-color: #000; margin-right: 8px; }
+  #dialog .opt { cursor: pointer; }
+  #confirm .tbtns { margin-top: 14px; display: none; gap: 12px; justify-content: center; }
+  body.touch #confirm .tbtns { display: flex; }
+  body.touch #confirm .opts { display: none; }
+
+  /* ---------- touch controls (iPad / phone) ---------- */
+  body.touch { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; }
+  #touch { position: fixed; inset: 0; z-index: 5; display: none; touch-action: none; }
+  body.touch.playing #touch { display: block; }
+  body.touch #keysHint { display: none; }
+  body.touch #area { left: 76px; top: 20px; }
+  body.touch #flagInfo { left: 76px; top: 48px; bottom: auto; font-size: 14px; padding: 5px 10px; }
+  #stickBase { position: absolute; width: 130px; height: 130px; margin: -65px 0 0 -65px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35); display: none; pointer-events: none; }
+  #stickKnob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: rgba(255,255,255,.55); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  #stickHint { position: absolute; left: 7%; bottom: 9%; width: 120px; height: 120px; border-radius: 50%; border: 2px dashed rgba(255,255,255,.3); pointer-events: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: rgba(255,255,255,.55); text-align: center; }
+  .tbtn { position: absolute; display: flex; align-items: center; justify-content: center; flex-direction: column; border-radius: 50%; color: #fff; font-weight: 900; font-size: 13px; letter-spacing: .5px; background: rgba(20,24,40,.45); border: 2px solid rgba(255,255,255,.45); box-shadow: 0 3px 10px rgba(0,0,0,.25); touch-action: none; -webkit-tap-highlight-color: transparent; }
+  .tbtn .ic { font-size: 24px; line-height: 1; margin-bottom: 2px; }
+  .tbtn.down { background: rgba(255,216,74,.6); border-color: #ffd84a; transform: scale(.94); }
+  .tbtn.on { background: rgba(255,216,74,.55); border-color: #ffd84a; }
+  #tJump { right: max(28px, env(safe-area-inset-right)); bottom: 34px; width: 128px; height: 128px; font-size: 15px; }
+  #tJump .ic { font-size: 34px; }
+  #tSneak { right: calc(max(28px, env(safe-area-inset-right)) + 146px); bottom: 34px; width: 76px; height: 76px; }
+  #tFlag { right: calc(max(28px, env(safe-area-inset-right)) + 30px); bottom: 182px; width: 68px; height: 68px; }
+  #tRespawn { right: calc(max(28px, env(safe-area-inset-right)) + 118px); bottom: 150px; width: 60px; height: 60px; font-size: 11px; }
+  #tPause { left: max(12px, env(safe-area-inset-left)); top: 12px; width: 52px; height: 52px; border-radius: 14px; }
+  #tTalk { left: 50%; bottom: 40px; transform: translateX(-50%); width: auto; height: 56px; padding: 0 24px; border-radius: 28px; font-size: 17px; flex-direction: row; gap: 8px; background: rgba(242,194,0,.8); color: #2b2210; border-color: #fff; }
+  #tTalk.down { transform: translateX(-50%) scale(.95); }
+  .touchOnly { display: none; }
+  body.touch .touchOnly { display: block; }
+  body.touch .kbOnly { display: none; }
   #dialog .count { font-size: 64px; font-weight: 900; text-align: center; color: #d23; }
 </style>
 </head>
@@ -94,7 +127,7 @@
   <div class="panel">
     <h1 class="logo">Climb<span>UP</span></h1>
     <div class="sub">Hüpf mit deinem Pogo-Stick über einen Berg aus geklautem Krempel bis ganz nach oben.<br>Dort oben wartet jemand auf dich…</div>
-    <table class="keys">
+    <table class="keys kbOnly">
       <tr><td><kbd>Maus</kbd></td><td>Umschauen</td></tr>
       <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Langsam rollen / Sprungrichtung</td></tr>
       <tr><td><kbd>Leertaste</kbd></td><td><b>Halten</b> = Sprung aufladen, <b>loslassen</b> = springen. Länger halten = höher</td></tr>
@@ -105,7 +138,16 @@
       <tr><td><kbd>F</kbd></td><td>Reden</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Pause / Einstellungen</td></tr>
     </table>
-    <button class="btn" id="startBtn">Klicken zum Starten</button>
+    <table class="keys touchOnly">
+      <tr><td><b>Linker Daumen</b></td><td>Joystick: rollen / Sprungrichtung</td></tr>
+      <tr><td><b>Rechts wischen</b></td><td>Umschauen</td></tr>
+      <tr><td><b>⤒ SPRUNG</b></td><td><b>Halten</b> = aufladen, <b>loslassen</b> = springen. In der Luft an einer Wand halten = <b>grinden</b></td></tr>
+      <tr><td><b>🦶 SCHLEICH</b></td><td>An/aus: langsamer, du rollst nicht über Kanten</td></tr>
+      <tr><td><b>🚩 FLAGGE</b></td><td>Checkpoint setzen / aufheben</td></tr>
+      <tr><td><b>↺ RESPAWN</b></td><td>Zurück zur Flagge (oder zum Start)</td></tr>
+      <tr><td colspan="2" style="text-align:center;opacity:.75;padding-top:8px">Tipp: Querformat. Für Vollbild in Safari „Zum Home-Bildschirm“ hinzufügen.</td></tr>
+    </table>
+    <button class="btn" id="startBtn"><span class="kbOnly">Klicken zum Starten</span><span class="touchOnly">Tippen zum Starten</span></button>
     <div class="pb" id="startBest"></div>
   </div>
 </div>
@@ -141,6 +183,18 @@
 <div id="confirm" class="hidden">
   <div id="confirmText">Wirklich respawnen?</div>
   <div class="opts"><kbd>Enter</kbd> / <kbd>J</kbd> Ja &nbsp;&nbsp; <kbd>N</kbd> / <kbd>R</kbd> Nein</div>
+  <div class="tbtns"><button class="btn" id="confYes">Ja</button><button class="btn grey" id="confNo">Nein</button></div>
+</div>
+
+<div id="touch">
+  <div id="stickHint">Joystick<br>(Daumen<br>hier hin)</div>
+  <div id="stickBase"><div id="stickKnob"></div></div>
+  <div class="tbtn" id="tPause"><span class="ic">⏸</span></div>
+  <div class="tbtn" id="tRespawn"><span class="ic">↺</span>RESPAWN</div>
+  <div class="tbtn" id="tFlag"><span class="ic">🚩</span>FLAGGE</div>
+  <div class="tbtn" id="tSneak"><span class="ic">🦶</span>SCHLEICH</div>
+  <div class="tbtn" id="tJump"><span class="ic">⤒</span>SPRUNG</div>
+  <div class="tbtn hidden" id="tTalk">🦆 Mit der Ente reden</div>
 </div>
 
 <div id="dialog" class="hidden">

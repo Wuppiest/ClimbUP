@@ -17,6 +17,11 @@ Du hüpfst auf einem Pogo-Stick über einen Turm aus zusammengewürfeltem Krempe
 | F | Mit der Ente reden |
 | Esc | Pause / Einstellungen |
 
+### iPad / Touch
+Wird automatisch erkannt: links ein Joystick (erscheint unter dem Daumen), rechts wischen zum Umschauen,
+Knöpfe für **Sprung** (halten = aufladen / an Wand grinden), **Schleichen** (an/aus), **Flagge**, **Respawn** und **Pause**.
+Am besten im Querformat; für Vollbild in Safari „Zum Home-Bildschirm“ hinzufügen.
+
 Bestzeit und Einstellungen werden lokal im Browser gespeichert.
 
 ## Entwicklung

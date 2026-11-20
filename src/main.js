@@ -173,13 +173,16 @@ const contacts = { ground: null, groundPoint: new V3(), wall: null };
 const _g = new V3(), _w = new V3();
 
 function gravAt(y) { return y > AREAS[5].y0 - 4 ? CFG.G_SPACE : CFG.G; }
+// touch joystick state (filled by the touch controls)
+const TOUCH = { enabled: false, mx: 0, my: 0 };
 function inputDir() {
-  const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  let f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), m = 1;
+  if (!f && !r && (TOUCH.mx || TOUCH.my)) { f = TOUCH.my; r = TOUCH.mx; m = Math.min(1, Math.hypot(f, r)); }
   if (!f && !r) return null;
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
   const x = -sy * f + cy * r, z = -cy * f - sy * r;
   const l = Math.hypot(x, z);
-  return { x: x / l, z: z / l };
+  return { x: x / l, z: z / l, m };
 }
 
 // ---------------- physics ----------------
@@ -249,7 +252,7 @@ function groundStep(dt, dir) {
     P.vel.x *= Math.max(0, 1 - 12 * dt); P.vel.z *= Math.max(0, 1 - 12 * dt);
   } else if (P.charge > 0 || P.tap) { P.tap = false; launch(dir); return; }
   else {
-    const sp = sneaking() ? CFG.SNEAK_SPEED : CFG.WALK_SPEED;
+    const sp = (sneaking() ? CFG.SNEAK_SPEED : CFG.WALK_SPEED) * (dir ? dir.m : 1);
     const tx = dir ? dir.x * sp : 0, tz = dir ? dir.z * sp : 0;
     const k = Math.min(1, 10 * dt);
     P.vel.x += (tx - P.vel.x) * k; P.vel.z += (tz - P.vel.z) * k;
@@ -396,7 +399,7 @@ function openDialog(nodeName) {
   dlg.open = true; dlg.phase = 'choose'; dlg.node = nodeName; dlg.opts = shuffle(node.opts.slice());
   $('dialog').classList.remove('hidden');
   $('dlgText').textContent = node.text;
-  $('dlgOpts').innerHTML = dlg.opts.map((o, i) => '<div class="opt"><kbd>' + (i + 1) + '</kbd>' + o.t + '</div>').join('');
+  $('dlgOpts').innerHTML = dlg.opts.map((o, i) => '<div class="opt" data-i="' + i + '"><kbd>' + (i + 1) + '</kbd>' + o.t + '</div>').join('');
 }
 function closeDialog() { dlg.open = false; dlg.phase = 'idle'; $('dialog').classList.add('hidden'); }
 function chooseOption(i) {
@@ -477,8 +480,8 @@ function updateHUD(dt) {
   else { const dy = Math.round(flag.pos.y - P.pos.y); fi.textContent = '🚩 Flagge: gesetzt (' + (dy > 0 ? '+' : '') + dy + ' m)'; }
   fi.classList.toggle('pending', flag.pending);
   let prompt = '';
-  if (!dlg.open && nearDuck()) prompt = '<kbd>F</kbd> Mit der Ente reden';
-  else if (!flag.carried && Math.hypot(P.pos.x - flag.pos.x, P.pos.z - flag.pos.z) < 2.6 && Math.abs(P.pos.y - flag.pos.y) < 3) prompt = '<kbd>E</kbd> Flagge aufheben';
+  if (!dlg.open && nearDuck()) prompt = TOUCH.enabled ? '' : '<kbd>F</kbd> Mit der Ente reden';
+  else if (!flag.carried && Math.hypot(P.pos.x - flag.pos.x, P.pos.z - flag.pos.z) < 2.6 && Math.abs(P.pos.y - flag.pos.y) < 3) prompt = TOUCH.enabled ? '🚩-Knopf: Flagge aufheben' : '<kbd>E</kbd> Flagge aufheben';
   const pe = $('prompt'); pe.classList.toggle('hidden', !prompt); if (prompt && pe.innerHTML !== prompt) pe.innerHTML = prompt;
   const ch = P.state === 'ground' && P.charge > 0;
   $('charge').classList.toggle('hidden', !ch);
@@ -596,7 +599,11 @@ function win() {
   $('win').classList.remove('hidden');
   if (document.pointerLockElement) document.exitPointerLock();
 }
-function lock() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ } }
+function pauseGame() {
+  paused = true; $('pause').classList.remove('hidden'); setConfirm(false);
+  for (const k in keys) keys[k] = false;
+}
+function lock() { if (TOUCH.enabled) return; try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ } }
 function startGame() { $('start').classList.add('hidden'); $('hud').classList.remove('hidden'); state = 'play'; paused = false; lock(); }
 
 $('startBtn').onclick = startGame;
@@ -604,9 +611,9 @@ $('resumeBtn').onclick = () => { $('pause').classList.add('hidden'); paused = fa
 $('restartBtn').onclick = () => { resetRun(); $('pause').classList.add('hidden'); paused = false; lock(); };
 $('againBtn').onclick = () => { resetRun(); $('win').classList.add('hidden'); state = 'play'; paused = false; lock(); };
 $('resetBestBtn').onclick = () => { best = null; store.set('best', null); updateBest(); };
-canvas.addEventListener('click', () => { if (state === 'play' && !document.pointerLockElement) { $('pause').classList.add('hidden'); paused = false; lock(); } });
+canvas.addEventListener('click', () => { if (state === 'play' && !TOUCH.enabled && !document.pointerLockElement) { $('pause').classList.add('hidden'); paused = false; lock(); } });
 document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && state === 'play') { paused = true; $('pause').classList.remove('hidden'); setConfirm(false); }
+  if (!document.pointerLockElement && state === 'play' && !TOUCH.enabled) pauseGame();
 });
 // settings UI
 function applySettings() {
@@ -631,18 +638,21 @@ document.addEventListener('mousedown', () => { if (state === 'play' && !paused) 
 window.addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
   if (state === 'win' && e.code === 'Enter') { $('againBtn').onclick(); return; }
+  pressKey(e.code, e.repeat);
+});
+// shared by keyboard and touch buttons
+function pressKey(code, repeat = false) {
   if (state !== 'play' || paused) return;
-  const first = !e.repeat;
-  if (first) dialogInterrupt();
-  keys[e.code] = true;
-  if (!first) return;
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) timerRunning = true;
+  if (!repeat) dialogInterrupt();
+  keys[code] = true;
+  if (repeat) return;
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(code)) timerRunning = true;
   if (confirmOpen) {
-    if (e.code === 'Enter' || e.code === 'KeyJ' || e.code === 'KeyY') { setConfirm(false); respawn(false); }
-    else if (e.code === 'KeyN' || e.code === 'KeyR' || e.code === 'Backspace') setConfirm(false);
+    if (code === 'Enter' || code === 'KeyJ' || code === 'KeyY') { setConfirm(false); respawn(false); }
+    else if (code === 'KeyN' || code === 'KeyR' || code === 'Backspace') setConfirm(false);
     return;
   }
-  switch (e.code) {
+  switch (code) {
     case 'Space': if (P.state === 'ground') P.tap = true; break; // very short taps between two physics steps still jump
     case 'KeyE': pressE(); break;
     case 'KeyR': setConfirm(true); break;
@@ -651,8 +661,9 @@ window.addEventListener('keydown', (e) => {
     case 'Digit2': case 'Numpad2': chooseOption(1); break;
     case 'Digit3': case 'Numpad3': chooseOption(2); break;
   }
-});
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+}
+function releaseKey(code) { keys[code] = false; }
+window.addEventListener('keyup', (e) => releaseKey(e.code));
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -676,6 +687,7 @@ function frame(now) {
   updateEnvironment();
   updateVisuals(dt);
   if (state === 'play') updateHUD(dt);
+  if (TOUCH.update) TOUCH.update();
   renderer.clear();
   renderer.render(scene, camera);
   if (state !== 'menu') { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
