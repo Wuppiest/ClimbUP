@@ -15,7 +15,8 @@ Du hüpfst auf einem Pogo-Stick über einen Turm aus zusammengewürfeltem Krempe
 | E | Checkpoint-Flagge setzen (auf flachem Boden; in der Luft: bei der Landung) / aufheben |
 | R | Respawn (mit Bestätigung): an der Flagge, oder am Start wenn du sie trägst |
 | F | Mit der Ente reden |
-| Esc | Pause / Einstellungen |
+| Esc | Pause / Einstellungen (inkl. Lautstärke) |
+| M | Ton an/aus |
 
 ### iPad / Touch
 Wird automatisch erkannt: links ein Joystick (erscheint unter dem Daumen), rechts wischen zum Umschauen,

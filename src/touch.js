@@ -92,7 +92,7 @@
     el.addEventListener('mouseup', () => { if (onUp) onUp(); });
   }
   button('tJump', () => pressKey('Space'), () => releaseKey('Space'));
-  button('tSneak', () => { if (live()) keys.ShiftLeft = !keys.ShiftLeft; });
+  button('tSneak', () => { if (live()) { keys.ShiftLeft = !keys.ShiftLeft; SFX.toggle(keys.ShiftLeft); } });
   button('tFlag', () => pressKey('KeyE'), () => releaseKey('KeyE'));
   button('tRespawn', () => pressKey('KeyR'), () => releaseKey('KeyR'));
   button('tTalk', () => pressKey('KeyF'), () => releaseKey('KeyF'));

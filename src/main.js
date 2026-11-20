@@ -6,7 +6,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('climbup.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('climbup.' + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-const settings = Object.assign({ sens: 1, fov: 80, ring: true }, store.get('settings', {}));
+const settings = Object.assign({ sens: 1, fov: 80, ring: true, vol: 0.7 }, store.get('settings', {}));
 
 // ---------------- renderer / scene ----------------
 const canvas = $('c');
@@ -312,6 +312,7 @@ function hasGround(x, y, z) { // is there floor right below this point (within a
 
 function startGrind(n) {
   P.grind = true; P.grindT = 0; P.lostT = 0; P.wallN.copy(n);
+  SFX.grindStart();
 }
 function endGrind() { P.grind = false; P.grindCd = 0.15; }
 function grindUpdate(dt, g) {
@@ -333,6 +334,7 @@ function kick() {
   P.vel.set(tx + n.x * CFG.KICK_OUT, CFG.KICK_UP, tz + n.z * CFG.KICK_OUT);
   P.grind = false; P.grindCd = 0.25; P.kicked = true; P.lastKickN.copy(n);
   feedback('ABSTOSS!', '#ffd84a');
+  SFX.kick();
 }
 
 function land(preVy) {
@@ -343,6 +345,7 @@ function land(preVy) {
   P.vel.set(P.vel.x * 0.3, 0, P.vel.z * 0.3);
   const impact = -preVy;
   P.dipV -= Math.min(4.5, 0.6 + impact * 0.13);
+  SFX.land(impact);
   if (P.peakY - P.pos.y > 9) { stats.falls++; if (P.peakY - P.pos.y > 25) toast('Autsch. ' + Math.round(P.peakY - P.pos.y) + ' m runtergefallen.'); }
   P.peakY = P.pos.y;
   if (flag.pending) { flag.pending = false; tryPlaceFlag(); }
@@ -355,6 +358,7 @@ function launch(dir) {
   P.state = 'air'; P.charge = 0; P.peakY = P.pos.y; P.pos.y += 0.005;
   P.dipV += 1.5 + c * 2.5; P.fovKick = c * 8;
   if (c >= 1) feedback('MAX!', '#ffd84a');
+  SFX.jump(c);
 }
 
 function respawn(auto) {
@@ -362,28 +366,31 @@ function respawn(auto) {
   else P.pos.copy(WORLD.start);
   P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
   stats.respawns++;
+  SFX.respawn();
   toast(auto ? 'Aus der Welt gefallen – Respawn.' : (flag.carried ? 'Zurück zum Start.' : 'Respawn an der Flagge.'));
   closeDialog();
 }
 
 // ---------------- flag ----------------
 function tryPlaceFlag() {
-  if (P.landN.y < 0.95) { toast('Boden zu schräg – Flagge nicht gesetzt.'); return; }
+  if (P.landN.y < 0.95) { toast('Boden zu schräg – Flagge nicht gesetzt.'); SFX.error(); return; }
   flag.pos.copy(P.landPoint); flag.carried = false; flag.pending = false;
   flagGroup.position.copy(flag.pos); flagGroup.visible = true;
   flagPlane.position.set(flag.pos.x, flag.pos.y + 0.03, flag.pos.z);
   toast('🚩 Flagge gesetzt!');
+  SFX.flagSet();
 }
 function pressE() {
   if (flag.carried) {
     if (P.state === 'ground') { tryPlaceFlag(); return; }
     flag.pending = !flag.pending;
     toast(flag.pending ? 'Flagge wird bei der nächsten Landung gesetzt…' : 'Flagge setzen abgebrochen.');
+    SFX.toggle(flag.pending);
   } else {
     const d = Math.hypot(P.pos.x - flag.pos.x, P.pos.z - flag.pos.z);
     if (d < 2.6 && Math.abs(P.pos.y - flag.pos.y) < 3) {
-      flag.carried = true; flagGroup.visible = false; toast('🚩 Flagge aufgehoben.');
-    } else toast('Zu weit weg von der Flagge (' + Math.round(P.pos.distanceTo(flag.pos)) + ' m).');
+      flag.carried = true; flagGroup.visible = false; toast('🚩 Flagge aufgehoben.'); SFX.flagPick();
+    } else { toast('Zu weit weg von der Flagge (' + Math.round(P.pos.distanceTo(flag.pos)) + ' m).'); SFX.error(); }
   }
 }
 
@@ -418,6 +425,7 @@ function openDialog(nodeName) {
   $('dialog').classList.remove('hidden');
   $('dlgText').textContent = node.text;
   $('dlgOpts').innerHTML = dlg.opts.map((o, i) => '<div class="opt" data-i="' + i + '"><kbd>' + (i + 1) + '</kbd>' + o.t + '</div>').join('');
+  SFX.squeak(1 + Math.floor(Math.random() * 2));
 }
 function closeDialog() { dlg.open = false; dlg.phase = 'idle'; $('dialog').classList.add('hidden'); }
 function chooseOption(i) {
@@ -428,12 +436,14 @@ function chooseOption(i) {
     dlg.phase = 'fail'; dlg.t = 1.8;
     $('dlgText').textContent = o.fail || 'Nö.';
     $('dlgOpts').innerHTML = '';
+    SFX.squeak(3);
     return;
   }
   if (o.go === 'wait') {
     dlg.phase = 'wait'; dlg.t = 5;
     $('dlgText').textContent = '…Korrekt. Na gut. Du darfst gewinnen. Du musst nur 5 Sekunden lang GAR NICHTS drücken.';
     $('dlgOpts').innerHTML = '<div class="count" id="dlgCount">5</div>';
+    SFX.squeak(1); dlg.lastTick = 6;
     return;
   }
   openDialog(o.go);
@@ -444,6 +454,7 @@ function duckPush() {
   P.state = 'air'; P.grind = false;
   P.vel.set(dx / l * 15, 7, dz / l * 15); P.pos.y += 0.05;
   feedback('QUAAAK!', '#ffd21f');
+  SFX.quack();
 }
 function dialogTick(dt) {
   if (!dlg.open) return;
@@ -452,7 +463,9 @@ function dialogTick(dt) {
   if (dlg.phase === 'fail') { dlg.t -= dt; if (dlg.t <= 0) duckPush(); }
   if (dlg.phase === 'wait') {
     dlg.t -= dt;
-    const el = $('dlgCount'); if (el) el.textContent = Math.max(1, Math.ceil(dlg.t));
+    const sec = Math.max(1, Math.ceil(dlg.t));
+    const el = $('dlgCount'); if (el) el.textContent = sec;
+    if (sec < dlg.lastTick) { dlg.lastTick = sec; SFX.tick(sec === 1); }
     if (dlg.t <= 0) win();
   }
 }
@@ -461,6 +474,7 @@ function dialogInterrupt() { // any key press during the 5 second wait
     dlg.phase = 'fail'; dlg.t = 1.4;
     $('dlgText').textContent = pick(['Ungeduldig. Schade.', 'Ich sagte: NICHTS. Tschüss.', 'Da hat wohl jemand gedrückt. Quak.']);
     $('dlgOpts').innerHTML = '';
+    SFX.error();
   }
 }
 function nearDuck() {
@@ -476,7 +490,7 @@ function fmt(t) {
 let toastT = 0, fbT = 0, bannerT = 0;
 function toast(s) { $('toast').textContent = s; $('toast').classList.add('show'); toastT = 2.2; }
 function feedback(s, color) { const el = $('feedback'); el.textContent = s; el.style.color = color; el.classList.add('show'); fbT = 0.5; }
-function banner(a) { $('banner').querySelector('.small').textContent = 'GEBIET ' + (a + 1) + ' / ' + AREAS.length; $('banner').querySelector('.big').textContent = AREAS[a].name; $('banner').classList.add('show'); bannerT = 2.6; }
+function banner(a) { $('banner').querySelector('.small').textContent = 'GEBIET ' + (a + 1) + ' / ' + AREAS.length; $('banner').querySelector('.big').textContent = AREAS[a].name; $('banner').classList.add('show'); bannerT = 2.6; SFX.area(); }
 function updateBest() {
   const s = best == null ? 'Bestzeit: –' : 'Bestzeit: ' + fmt(best);
   $('best').textContent = s; $('startBest').textContent = s; $('pauseBest').textContent = s;
@@ -611,6 +625,7 @@ function resetRun() {
   closeDialog(); setConfirm(false);
 }
 function win() {
+  SFX.win();
   closeDialog();
   state = 'win'; timerRunning = false;
   const isRecord = best == null || runTime < best;
@@ -631,6 +646,7 @@ function lock() { if (TOUCH.enabled) return; try { const p = canvas.requestPoint
 function startGame() { $('start').classList.add('hidden'); $('hud').classList.remove('hidden'); state = 'play'; paused = false; lock(); }
 
 $('startBtn').onclick = startGame;
+for (const ev of ['pointerdown', 'keydown', 'touchstart', 'touchend', 'click']) window.addEventListener(ev, () => SFX.init(), { capture: true, passive: true });
 $('resumeBtn').onclick = () => { $('pause').classList.add('hidden'); paused = false; lock(); };
 $('restartBtn').onclick = () => { resetRun(); $('pause').classList.add('hidden'); paused = false; lock(); };
 $('againBtn').onclick = () => { resetRun(); $('win').classList.add('hidden'); state = 'play'; paused = false; lock(); };
@@ -644,11 +660,14 @@ function applySettings() {
   $('sens').value = settings.sens; $('sensV').textContent = (+settings.sens).toFixed(2);
   $('fov').value = settings.fov; $('fovV').textContent = settings.fov;
   $('ring').checked = settings.ring;
+  $('vol').value = settings.vol; $('volV').textContent = Math.round(settings.vol * 100) + '%';
+  SFX.setVolume();
   store.set('settings', settings);
 }
 $('sens').oninput = (e) => { settings.sens = +e.target.value; applySettings(); };
 $('fov').oninput = (e) => { settings.fov = +e.target.value; applySettings(); };
 $('ring').onchange = (e) => { settings.ring = e.target.checked; applySettings(); };
+$('vol').oninput = (e) => { settings.vol = +e.target.value; applySettings(); };
 applySettings(); updateBest();
 
 // ---------------- input ----------------
@@ -679,7 +698,8 @@ function pressKey(code, repeat = false) {
   switch (code) {
     case 'Space': if (P.state === 'ground') P.tap = true; break; // very short taps between two physics steps still jump
     case 'KeyE': pressE(); break;
-    case 'KeyR': setConfirm(true); break;
+    case 'KeyR': setConfirm(true); SFX.click(); break;
+    case 'KeyM': toast(SFX.toggleMute() ? '🔇 Ton aus (M)' : '🔊 Ton an (M)'); break;
     case 'KeyF': if (!dlg.open && nearDuck()) openDialog('start'); break;
     case 'Digit1': case 'Numpad1': chooseOption(0); break;
     case 'Digit2': case 'Numpad2': chooseOption(1); break;
@@ -712,6 +732,11 @@ function frame(now) {
   updateVisuals(dt);
   if (state === 'play') updateHUD(dt);
   if (TOUCH.update) TOUCH.update();
+  SFX.update({
+    playing: state === 'play' && !paused, ground: P.state === 'ground', charge: P.charge,
+    speed: Math.hypot(P.vel.x, P.vel.z), vy: P.vel.y, grind: P.grind, height: P.pos.y,
+    space: T.MathUtils.clamp((P.pos.y - AREAS[5].y0 + 15) / 20, 0, 1),
+  });
   renderer.clear();
   renderer.render(scene, camera);
   if (state !== 'menu') { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
