@@ -2,7 +2,7 @@
 
 3D-Kletterspiel im Only-Up-Stil, als **eine einzige HTML-Datei**: `index.html` im Browser öffnen, fertig (läuft offline).
 
-Du hüpfst auf einem Pogo-Stick über einen Turm aus zusammengewürfeltem Krempel nach oben – durch 6 Gebiete bis zur Gummiente.
+Du hüpfst auf einem Pogo-Stick über einen Turm aus zusammengewürfeltem Krempel nach oben – durch 8 Gebiete bis zur Gummiente.
 
 ## Steuerung
 | Taste | Aktion |

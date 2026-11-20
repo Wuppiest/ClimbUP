@@ -392,7 +392,7 @@ const BUILD = {
     o.cyl(1.45, 0.3, 0, cy + r * 1.12 - 0.1, 0, cols[1], { col: false, seg: 12 });
     o.col(r * 1.8, r * 1.6, r * 1.8, 0, cy, 0);
     o.colCyl(1.45, 0.4, 0, cy + r * 1.12 - 0.15, 0);
-    o.top = { w: 2.6, d: 2.6, h: cy + r * 1.12 + 0.05 }; return o;
+    o.top = { w: 2.6, d: 2.6, h: cy + r * 1.12 + 0.05 }; o.span = { w: 4.8, d: 4.8 }; return o;
   },
   plane() {
     const o = new Obj(); const c = tint(pick(['#e74c3c', '#f1f1f1', '#2e86c1', '#f4c20d']), 0.04);
@@ -482,7 +482,7 @@ const BUILD = {
     o.cyl(1.0, 0.06, 0, 1.58, 0, '#a6e8f8', { col: false, seg: 12 });
     o.colCyl(1.15, 0.9, 0, 1.15, 0);
     for (let i = 0; i < 10; i++) { const a = i / 10 * PI * 2; o.sph(0.14, Math.cos(a) * 2.6, 0.4, Math.sin(a) * 2.6, i % 2 ? '#ffe066' : '#ff5e5e', { seg: 5 }); }
-    o.top = { w: 2.0, d: 2.0, h: 1.6 }; return o;
+    o.top = { w: 2.0, d: 2.0, h: 1.6 }; o.span = { w: 5.4, d: 5.4 }; return o; // span = overhang below the top
   },
 
   // ---------------- big rest platforms at the start of each area ----------------
@@ -527,3 +527,329 @@ const BUILD = {
 };
 
 const LONG_NARROW = new Set(['ibeam', 'pencil', 'trafficlight']);
+
+// ============================================================
+//  Map 2: new parts
+// ============================================================
+// put another object's parts into this one (translated + rotated around y)
+Obj.prototype.merge = function (other, x, y, z, ry = 0) {
+  const m = new T.Matrix4().compose(new V3(x, y, z), new T.Quaternion().setFromAxisAngle(UP, ry), new V3(1, 1, 1));
+  for (const p of other.parts) this.parts.push({ geo: p.geo, m: m.clone().multiply(p.m), color: p.color });
+  const c = Math.cos(ry), s = Math.sin(ry);
+  for (const k of other.cols) this.cols.push({ ...k, x: x + k.x * c + k.z * s, y: y + k.y, z: z - k.x * s + k.z * c, ry: k.ry + ry });
+  return this;
+};
+
+Object.assign(BUILD, {
+  // ---------- Schrottplatz ----------
+  cart() {
+    const o = new Obj(); const steel = '#b9c0c7', W = 2.1, D = 1.35, H = 1.3, y0 = 0.7;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      o.cyl(0.035, H, sx * W / 2, y0 + H / 2, sz * D / 2, steel, { col: false, seg: 4 });
+      o.cyl(0.14, 0.08, sx * (W / 2 - 0.15), 0.14, sz * (D / 2 - 0.1), '#222', { rx: PI / 2, col: false, seg: 8 });
+      o.cyl(0.03, y0 - 0.1, sx * (W / 2 - 0.15), y0 / 2 + 0.1, sz * (D / 2 - 0.1), steel, { col: false, seg: 4 });
+    }
+    for (let x = -W / 2; x <= W / 2 + 0.01; x += 0.21) { o.box(0.025, H, 0.025, x, y0 + H / 2, D / 2, steel, { col: false }); o.box(0.025, H, 0.025, x, y0 + H / 2, -D / 2, steel, { col: false }); }
+    for (let y = y0; y <= y0 + H + 0.01; y += 0.26) { o.box(W, 0.025, 0.025, 0, y, D / 2, steel, { col: false }); o.box(W, 0.025, 0.025, 0, y, -D / 2, steel, { col: false }); o.box(0.025, 0.025, D, W / 2, y, 0, steel, { col: false }); o.box(0.025, 0.025, D, -W / 2, y, 0, steel, { col: false }); }
+    o.box(W, 0.04, D, 0, y0, 0, steel, { col: false });
+    for (let i = 0; i < 9; i++) o.box(R(0.4, 0.8), R(0.3, 0.6), R(0.3, 0.6), R(-0.7, 0.7), y0 + H - 0.3, R(-0.4, 0.4), pick(PAL.bright), { ry: rng() * 3, col: false });
+    o.cyl(0.04, D + 0.2, -W / 2 - 0.25, y0 + H + 0.05, 0, '#d63031', { rx: PI / 2, col: false, seg: 6 });
+    o.col(W, H, D, 0, y0 + H / 2, 0);
+    o.top = { w: W, d: D, h: y0 + H }; o.long = true; return o;
+  },
+  vending() {
+    const o = new Obj(); const c = tint(pick(['#c0392b', '#2e86c1', '#27ae60']), 0.05);
+    o.box(2.3, 1.0, 1.3, 0, 0.5, 0, c);
+    o.box(1.5, 0.02, 0.9, -0.3, 1.0, 0, '#bfe6f5', { col: false });
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 3; j++) o.cyl(0.08, 0.3, -0.9 + i * 0.3, 0.98, -0.3 + j * 0.3, pick(['#e74c3c', '#f1c40f', '#2ecc71', '#ecf0f1']), { rz: PI / 2, col: false, seg: 6 });
+    o.box(0.5, 0.02, 0.4, 0.8, 1.0, 0.2, '#2c3e50', { col: false });
+    o.box(0.3, 0.02, 0.15, 0.8, 1.0, -0.3, '#111', { col: false });
+    o.top = { w: 2.3, d: 1.3, h: 1.0 }; o.long = true; return o;
+  },
+  arcade() {
+    const o = new Obj(); const c = tint(pick(['#1f1f3a', '#5b2c83', '#1b4f72']), 0.05);
+    o.box(1.4, 2.4, 1.3, 0, 1.2, 0, c);
+    o.box(0.04, 0.7, 1.0, 0.71, 1.55, 0, '#0b0b0b', { col: false });
+    o.box(0.04, 0.55, 0.85, 0.73, 1.55, 0, pick(['#39ff88', '#3df2ff', '#ff4fd8']), { col: false });
+    o.box(0.45, 0.12, 1.25, 0.88, 1.0, 0, '#222', { col: false });
+    o.cyl(0.05, 0.2, 0.9, 1.15, -0.3, '#c0392b', { col: false, seg: 6 });
+    for (const z of [0.1, 0.3, 0.5]) o.cyl(0.06, 0.04, 0.9, 1.07, z, pick(['#f1c40f', '#e74c3c', '#3498db']), { col: false, seg: 8 });
+    o.box(0.05, 0.35, 1.2, 0.71, 2.2, 0, '#ffd84a', { col: false });
+    o.top = { w: 1.4, d: 1.3, h: 2.4 }; return o;
+  },
+  // ---------- Baustelle ----------
+  jersey() {
+    const o = new Obj(); const L = R(3.4, 4.2);
+    o.box(L, 0.45, 1.4, 0, 0.225, 0, '#c9c9c4');
+    o.box(L, 0.65, 1.0, 0, 0.775, 0, '#d2d2cc');
+    for (let x = -L / 2 + 0.3; x < L / 2; x += 0.8) o.box(0.4, 0.3, 1.02, x, 0.85, 0, '#c0392b', { col: false });
+    o.top = { w: L, d: 1.0, h: 1.1 }; o.long = true; return o;
+  },
+  planks() {
+    const o = new Obj(); const n = RI(5, 8);
+    for (let i = 0; i < n; i++) for (let k = 0; k < 6; k++) o.box(3.4, 0.12, 0.28, (rng() - 0.5) * 0.15, 0.06 + i * 0.16, -0.75 + k * 0.3, tint(pick(PAL.wood), 0.1), { col: false });
+    for (let i = 0; i < n; i += 2) for (const x of [-1.2, 0, 1.2]) o.box(0.12, 0.04, 1.85, x, 0.14 + i * 0.16, 0, '#6b4a2b', { col: false });
+    const h = n * 0.16;
+    o.col(3.4, h, 1.8, 0, h / 2, 0);
+    o.top = { w: 3.4, d: 1.8, h }; o.long = true; return o;
+  },
+  pipestack() {
+    const o = new Obj(); const L = 4.4, r = 0.33;
+    for (let row = 0; row < 3; row++) for (let i = 0; i < 4 - (row === 2 ? 0 : 0); i++) {
+      const z = -1.0 + i * 0.67, y = r + row * 0.6;
+      o.cyl(r, L, 0, y, z, tint(pick(['#7f8c8d', '#95a5a6', '#c0392b']), 0.05), { rz: PI / 2, col: false, seg: 8 });
+      o.cyl(r * 0.7, L + 0.02, 0, y, z, '#2c2c2c', { rz: PI / 2, col: false, seg: 8 });
+    }
+    for (const x of [-1.4, 1.4]) o.box(0.08, 1.9, 2.75, x, 0.95, 0, '#e67e22', { col: false });
+    o.col(L, 1.85, 2.6, 0, 0.925, 0);
+    o.top = { w: L, d: 2.6, h: 1.85 }; o.long = true; return o;
+  },
+  // ---------- Hafen ----------
+  crate() {
+    const o = new Obj(); const s = R(1.7, 2.1); const c = tint('#b98a52', 0.08), dk = c.clone().multiplyScalar(0.75);
+    o.box(s, s, s, 0, s / 2, 0, c);
+    for (const sg of [-1, 1]) {
+      o.box(s + 0.04, 0.16, 0.16, 0, 0.1, sg * s / 2, dk, { col: false }); o.box(s + 0.04, 0.16, 0.16, 0, s - 0.1, sg * s / 2, dk, { col: false });
+      o.box(0.16, 0.16, s + 0.04, sg * s / 2, 0.1, 0, dk, { col: false }); o.box(0.16, 0.16, s + 0.04, sg * s / 2, s - 0.1, 0, dk, { col: false });
+      o.box(Math.hypot(s, s) * 0.92, 0.14, 0.04, 0, s / 2, sg * (s / 2 + 0.02), dk, { rz: PI / 4, col: false });
+    }
+    o.box(s * 0.5, 0.01, s * 0.3, 0, s + 0.005, 0, '#2c2c2c', { col: false }); // stencil
+    o.top = { w: s, d: s, h: s }; return o;
+  },
+  crateStack() {
+    const o = new Obj();
+    const a = BUILD.crate(), b = BUILD.crate(), c = BUILD.crate();
+    o.merge(a, -1.1, 0, 0.2, 0.2); o.merge(b, 1.1, 0, -0.1, -0.15);
+    const h0 = Math.max(a.top.h, b.top.h);
+    o.merge(c, 0, h0, 0, 0);
+    o.top = { w: c.top.w, d: c.top.d, h: h0 + c.top.h }; o.span = { w: 4.4, d: 2.4 }; o.long = true; return o;
+  },
+  buoy() {
+    const o = new Obj(); const c = pick(['#e74c3c', '#f39c12', '#27ae60']);
+    o.cyl(1.0, 0.9, 0, 0.45, 0, c, { col: false, seg: 12 });
+    o.cyl(1.02, 0.25, 0, 0.6, 0, '#ffffff', { col: false, seg: 12 });
+    o.cyl(1.15, 0.15, 0, 0.98, 0, '#555', { col: false, seg: 12 });
+    o.cone(0.9, 1.2, 0, -0.6, 0, c, { rx: PI, seg: 12 });
+    o.cyl(0.06, 1.4, 0.75, 1.75, 0, '#ddd', { col: false, seg: 5 });
+    o.sph(0.15, 0.75, 2.5, 0, '#fff4a0', { seg: 6 });
+    o.colCyl(1.1, 1.05, 0, 0.525, 0);
+    o.top = { w: 2.0, d: 2.0, h: 1.05 }; return o;
+  },
+  bollard() {
+    const o = new Obj();
+    o.box(1.8, 0.3, 1.8, 0, 0.15, 0, '#7f8c8d');
+    o.cyl(0.55, 1.0, 0, 0.8, 0, '#2c2c2c', { col: false, seg: 10 });
+    o.cyl(0.75, 0.22, 0, 1.4, 0, '#2c2c2c', { col: false, seg: 10 });
+    o.torus(0.6, 0.12, 0, 0.9, 0, '#c8a96a', { rx: PI / 2, seg: 12 });
+    o.colCyl(0.75, 1.21, 0, 0.905, 0);
+    o.top = { w: 1.4, d: 1.4, h: 1.51 }; return o;
+  },
+  rowboat() {
+    const o = new Obj(); const L = 4.4, c = tint(pick(['#2e86c1', '#c0392b', '#f0f0f0', '#27ae60']), 0.05);
+    o.box(L - 1.2, 0.8, 1.6, -0.3, 0.4, 0, c, { col: false });
+    o.box(1.4, 0.8, 1.1, L / 2 - 0.85, 0.4, 0, c, { ry: 0, col: false });
+    o.add(geoCone(4), L / 2 - 0.1, 0.4, 0, 0.78, 1.0, 0.78, c, 0, PI / 4, -PI / 2);
+    o.box(L - 0.6, 0.06, 1.62, -0.1, 0.83, 0, '#2c3e50', { col: false }); // tarp
+    o.box(L, 0.1, 0.1, 0, 0.75, 0.82, '#8b5a2b', { col: false });
+    o.box(L, 0.1, 0.1, 0, 0.75, -0.82, '#8b5a2b', { col: false });
+    o.box(0.1, 0.06, 2.8, -0.6, 0.9, 0, '#a0794a', { col: false, ry: 0.4 }); // oar
+    o.col(L, 0.86, 1.6, 0, 0.43, 0);
+    o.top = { w: L - 0.4, d: 1.6, h: 0.86 }; o.long = true; return o;
+  },
+  containers2() {
+    const o = new Obj(); const a = BUILD.container(), b = BUILD.container();
+    o.merge(a, 0, 0, 0, 0); o.merge(b, 0, a.top.h, 0, PI / 2);
+    o.top = { w: b.top.d, d: b.top.w, h: a.top.h + b.top.h }; return o;
+  },
+  // ---------- Stadt ----------
+  vent() {
+    const o = new Obj(); const c = tint('#aab2b9', 0.05);
+    o.box(1.7, 1.3, 1.7, 0, 0.65, 0, c);
+    for (let y = 0.25; y < 1.2; y += 0.18) o.box(1.72, 0.06, 1.72, 0, y, 0, '#7f8890', { col: false });
+    o.cyl(0.55, 0.1, 0, 1.35, 0, '#6d757c', { col: false, seg: 12 });
+    o.cyl(0.08, 0.14, 0, 1.36, 0, '#333', { col: false, seg: 6 });
+    o.top = { w: 1.7, d: 1.7, h: 1.4 }; return o;
+  },
+  solar() {
+    const o = new Obj();
+    for (const sx of [-1.3, 1.3]) for (const sz of [-0.8, 0.8]) o.cyl(0.06, 1.2, sx, 0.6, sz, '#888', { seg: 5 });
+    o.box(3.2, 0.12, 2.2, 0, 1.26, 0, '#bdc3c7');
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) o.box(0.72, 0.02, 0.66, -1.17 + i * 0.78, 1.33, -0.71 + j * 0.71, '#1b3a6b', { col: false });
+    o.top = { w: 3.2, d: 2.2, h: 1.32 }; o.long = true; return o;
+  },
+  pigeon() {
+    const o = new Obj(); const wood = tint('#c9a26b', 0.06);
+    o.box(1.7, 1.4, 1.7, 0, 0.7, 0, wood);
+    for (const z of [-0.4, 0.4]) o.box(0.04, 0.3, 0.3, 0.86, 0.9, z, '#2c1f14', { col: false });
+    o.box(1.95, 0.18, 1.95, 0, 1.49, 0, '#7f3b2b');
+    for (let i = 0; i < 3; i++) { const x = R(-0.6, 0.6), z = R(-0.6, 0.6); o.sph(0.13, x, 1.67, z, '#9aa0a8', { sx: 1.5, seg: 6 }); o.sph(0.07, x + 0.15, 1.78, z, '#7a8088', { seg: 5 }); }
+    o.top = { w: 1.95, d: 1.95, h: 1.58 }; return o;
+  },
+  // ---------- Riesenzimmer ----------
+  sponge() {
+    const o = new Obj();
+    o.box(3.2, 1.1, 2.0, 0, 0.55, 0, '#f4d03f');
+    o.box(3.2, 0.35, 2.0, 0, 1.275, 0, '#27ae60');
+    for (let i = 0; i < 10; i++) o.cyl(0.08, 0.02, R(-1.4, 1.4), R(0.2, 0.9), 1.01, '#c9a227', { rx: PI / 2, col: false, seg: 6 });
+    o.sph(0.25, 0.8, 1.48, 0.4, '#e8f6ff', { sy: 0.6, seg: 6 }); // soap bubble foam
+    o.top = { w: 3.2, d: 2.0, h: 1.45 }; o.long = true; return o;
+  },
+  remote() {
+    const o = new Obj();
+    o.box(5.2, 0.5, 1.6, 0, 0.25, 0, '#1e1e1e');
+    o.cyl(0.18, 0.06, 2.2, 0.52, 0, '#e74c3c', { col: false, seg: 10 });
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) o.cyl(0.14, 0.05, -1.6 + i * 0.6, 0.52, -0.45 + j * 0.45, '#555', { col: false, seg: 8 });
+    o.box(0.9, 0.05, 0.3, 1.2, 0.52, 0.4, '#27ae60', { col: false }); o.box(0.9, 0.05, 0.3, 1.2, 0.52, -0.4, '#2e86c1', { col: false });
+    o.top = { w: 5.2, d: 1.6, h: 0.5 }; o.long = true; return o;
+  },
+  cheese() {
+    const o = new Obj();
+    o.box(3.0, 1.6, 2.2, 0, 0.8, 0, '#f7c948');
+    for (let i = 0; i < 9; i++) {
+      const side = RI(0, 2), r = R(0.12, 0.3);
+      if (side === 0) o.cyl(r, 0.02, R(-1.3, 1.3), 1.61, R(-0.9, 0.9), '#d9a520', { col: false, seg: 8 });
+      else if (side === 1) o.cyl(r, 0.02, R(-1.3, 1.3), R(0.3, 1.3), 1.11, '#d9a520', { rx: PI / 2, col: false, seg: 8 });
+      else o.cyl(r, 0.02, 1.51, R(0.3, 1.3), R(-0.9, 0.9), '#d9a520', { rz: PI / 2, col: false, seg: 8 });
+    }
+    o.top = { w: 3.0, d: 2.2, h: 1.6 }; return o;
+  },
+  cookie() {
+    const o = new Obj(); const r = R(1.7, 2.1);
+    o.cyl(r, 0.45, 0, 0.225, 0, '#c68b4e', { col: false, seg: 14 });
+    for (let i = 0; i < 9; i++) { const a = rng() * PI * 2, d = rng() * r * 0.8; o.box(0.22, 0.1, 0.22, Math.cos(a) * d, 0.47, Math.sin(a) * d, '#4a2b17', { ry: rng(), col: false }); }
+    o.colCyl(r, 0.45, 0, 0.225, 0);
+    o.top = { w: r * 1.8, d: r * 1.8, h: 0.45 }; return o;
+  },
+  // ---------- Jahrmarkt ----------
+  bumpercar() {
+    const o = new Obj(); const c = tint(pick(['#e74c3c', '#3498db', '#f1c40f', '#9b59b6', '#2ecc71']), 0.05);
+    o.box(2.6, 0.4, 1.7, 0, 0.3, 0, '#2c2c2c');
+    o.box(2.4, 0.55, 1.55, 0, 0.75, 0, c);
+    o.box(0.5, 0.5, 1.3, -0.95, 1.25, 0, c.clone().multiplyScalar(0.8), { col: false });
+    o.cyl(0.04, 2.4, -1.05, 2.2, 0, '#bbb', { col: false, seg: 4 });
+    o.cyl(0.12, 0.15, -1.05, 3.4, 0, '#ffd84a', { col: false, seg: 6 });
+    o.cyl(0.25, 0.05, 0.6, 1.05, 0, '#222', { col: false, seg: 10 });
+    o.box(0.3, 0.05, 0.6, 1.0, 1.04, 0, '#fff', { col: false });
+    o.top = { w: 2.4, d: 1.55, h: 1.02 }; o.long = true; return o;
+  },
+  popcorn() {
+    const o = new Obj();
+    o.box(1.7, 1.2, 1.3, 0, 0.8, 0, '#c0392b');
+    for (let x = -0.7; x <= 0.71; x += 0.35) o.box(0.15, 1.2, 1.32, x, 0.8, 0, '#ffffff', { col: false });
+    o.box(1.5, 1.1, 1.1, 0, 1.95, 0, '#fff7c2', { col: false });
+    for (let i = 0; i < 14; i++) o.sph(0.1, R(-0.6, 0.6), R(1.5, 2.1), R(-0.45, 0.45), '#fff3b0', { seg: 4 });
+    o.box(2.0, 0.2, 1.6, 0, 2.6, 0, '#c0392b');
+    o.col(1.5, 1.1, 1.1, 0, 1.95, 0);
+    for (const sx of [-0.6, 0.6]) o.cyl(0.25, 0.1, sx, 0.25, 0.7, '#333', { rx: PI / 2, col: false, seg: 10 });
+    o.top = { w: 2.0, d: 1.6, h: 2.7 }; return o;
+  },
+  giftbox() {
+    const o = new Obj(); const s = R(2.0, 2.5); const c = tint(pick(PAL.bright), 0.04), rb = pick(['#ffd84a', '#ffffff', '#e74c3c']);
+    o.box(s, s, s, 0, s / 2, 0, c);
+    o.box(s + 0.03, s + 0.03, 0.3, 0, s / 2, 0, rb, { col: false });
+    o.box(0.3, s + 0.03, s + 0.03, 0, s / 2, 0, rb, { col: false });
+    o.torus(0.3, 0.3, 0.25, s + 0.15, 0, rb, { rx: 0.3, seg: 8 });
+    o.torus(0.3, 0.3, -0.25, s + 0.15, 0, rb, { rx: -0.3, seg: 8 });
+    o.top = { w: s, d: s, h: s }; return o;
+  },
+  teacup() {
+    const o = new Obj(); const c = tint(pick(['#ff9ff3', '#48dbfb', '#feca57', '#1dd1a1']), 0.04);
+    o.cyl(2.3, 0.25, 0, 0.125, 0, '#f5f5f5', { col: false, seg: 16 });
+    o.cyl(1.7, 1.5, 0, 1.0, 0, c, { rt: 1.0, col: false, seg: 16 });
+    o.cyl(1.55, 0.02, 0, 1.74, 0, '#8e5a2b', { col: false, seg: 16 });
+    for (let i = 0; i < 8; i++) { const a = i / 8 * PI * 2; o.sph(0.18, Math.cos(a) * 1.72, 1.0, Math.sin(a) * 1.72, '#ffffff', { seg: 5 }); }
+    o.torus(0.55, 0.25, 1.9, 1.05, 0, c, { seg: 10 });
+    o.colCyl(2.3, 0.25, 0, 0.125, 0); o.colCyl(1.7, 1.5, 0, 1.0, 0);
+    o.top = { w: 3.0, d: 3.0, h: 1.75 }; o.span = { w: 4.6, d: 4.6 }; return o;
+  },
+  ticket() {
+    const o = new Obj();
+    o.box(1.8, 2.2, 1.8, 0, 1.1, 0, '#2e86c1');
+    o.box(0.04, 0.8, 1.2, 0.91, 1.5, 0, '#bfe6f5', { col: false });
+    o.box(0.3, 0.06, 1.2, 1.05, 1.05, 0, '#f1c40f', { col: false });
+    o.box(2.2, 0.25, 2.2, 0, 2.32, 0, '#e74c3c');
+    for (let i = 0; i < 6; i++) o.box(0.36, 0.26, 2.22, -0.9 + i * 0.36, 2.32, 0, i % 2 ? '#ffffff' : '#e74c3c', { col: false });
+    o.box(0.04, 0.35, 1.4, 0.92, 2.0, 0, '#ffd84a', { col: false });
+    o.top = { w: 2.2, d: 2.2, h: 2.45 }; return o;
+  },
+  podium() {
+    const o = new Obj(); const r = R(1.5, 1.9);
+    o.cyl(r, 1.2, 0, 0.6, 0, '#c0392b', { col: false, seg: 12 });
+    for (let i = 0; i < 6; i++) o.box(0.35, 1.22, 0.05, Math.cos(i / 6 * PI * 2) * r * 0.97, 0.6, Math.sin(i / 6 * PI * 2) * r * 0.97, '#ffffff', { ry: -i / 6 * PI * 2 + PI / 2, col: false });
+    o.cyl(r + 0.08, 0.12, 0, 1.2, 0, '#d4af37', { col: false, seg: 12 });
+    o.cyl(r + 0.08, 0.12, 0, 0.06, 0, '#d4af37', { col: false, seg: 12 });
+    for (let i = 0; i < 5; i++) { const a = rng() * PI * 2; o.sph(0.07, Math.cos(a) * r * 0.5, 1.27, Math.sin(a) * r * 0.5, '#ffd84a', { seg: 5 }); }
+    o.colCyl(r, 1.26, 0, 0.63, 0);
+    o.top = { w: r * 1.8, d: r * 1.8, h: 1.26 }; return o;
+  },
+  // ---------- Wolken ----------
+  gondola() {
+    const o = new Obj(); const c = tint(pick(['#e74c3c', '#f1c40f', '#2e86c1']), 0.05);
+    o.box(2.8, 2.0, 2.2, 0, 1.0, 0, c);
+    for (const sz of [-1, 1]) o.box(2.4, 0.8, 0.02, 0, 1.35, sz * 1.11, '#cfefff', { col: false });
+    o.box(3.0, 0.2, 2.4, 0, 2.1, 0, '#ecf0f1');
+    o.box(0.15, 2.5, 0.15, 0, 3.4, 0, '#7f8c8d', { col: false });
+    o.cyl(0.05, 40, 0, 4.7, 0, '#333', { rz: PI / 2, col: false, seg: 4 });
+    o.top = { w: 3.0, d: 2.4, h: 2.2 }; o.long = true; return o;
+  },
+  paperplane() {
+    const o = new Obj(); const c = '#fbfbf6';
+    o.box(6.0, 0.08, 1.4, 0, 0.25, 0.75, c, { rx: 0.12, col: false });
+    o.box(6.0, 0.08, 1.4, 0, 0.25, -0.75, c, { rx: -0.12, col: false });
+    o.box(6.0, 0.6, 0.06, 0, -0.05, 0, '#e8e8e0', { col: false });
+    o.add(geoCone(3), 3.4, 0.2, 0, 0.6, 1.4, 1.6, c, 0, 0, -PI / 2);
+    o.box(5.5, 0.01, 0.04, 0, 0.42, 0.75, '#d0d0c8', { col: false });
+    o.col(6.0, 0.4, 2.8, 0, 0.2, 0);
+    o.top = { w: 6.0, d: 2.6, h: 0.4 }; o.long = true; return o;
+  },
+  // ---------- Weltraum ----------
+  rover() {
+    const o = new Obj();
+    o.box(3.2, 0.45, 2.0, 0, 1.05, 0, '#cfd3d6');
+    o.box(3.0, 0.08, 1.8, 0, 1.31, 0, '#d4a63a', { col: false });
+    for (const sx of [-1.2, 0, 1.2]) for (const sz of [-1.15, 1.15]) {
+      o.cyl(0.42, 0.3, sx, 0.42, sz, '#3a3a3a', { rx: PI / 2, col: false, seg: 10 });
+      o.cyl(0.06, 0.6, sx, 0.75, sz * 0.92, '#888', { col: false, seg: 4 });
+    }
+    o.cyl(0.04, 1.4, -1.3, 2.0, 0.7, '#aaa', { col: false, seg: 4 });
+    o.add(geoHalfSph(10), -1.3, 2.7, 0.7, 0.5, 0.18, 0.5, '#eee', PI, 0, 0);
+    o.box(0.6, 0.4, 0.6, 1.2, 1.5, -0.5, '#555', { col: false });
+    o.top = { w: 3.2, d: 2.0, h: 1.3 }; o.long = true; return o;
+  },
+  crystal() {
+    const o = new Obj(); const c = tint(pick(['#a66bff', '#4fe3ff', '#ff6bd6']), 0.06);
+    o.cyl(1.2, 2.2, 0, 1.1, 0, c, { col: false, seg: 6 });
+    o.cyl(1.0, 0.04, 0, 2.21, 0, c.clone().lerp(new T.Color('#ffffff'), 0.4), { col: false, seg: 6 });
+    for (let i = 0; i < 5; i++) { const a = rng() * PI * 2; o.cyl(R(0.25, 0.45), R(1.0, 2.2), Math.cos(a) * 1.4, 0.5, Math.sin(a) * 1.4, c.clone().multiplyScalar(0.85), { rx: R(-0.5, 0.5), rz: R(-0.5, 0.5), col: false, seg: 6 }); }
+    o.add(geoCone(6), 0, -0.9, 0, 1.15, 1.8, 1.15, '#6b6560', PI, 0, 0);
+    o.colCyl(1.15, 2.2, 0, 1.1, 0);
+    o.top = { w: 2.0, d: 2.0, h: 2.2 }; return o;
+  },
+  probe() {
+    const o = new Obj();
+    o.cyl(1.2, 1.4, 0, 0.7, 0, '#d4a63a', { col: false, seg: 8 });
+    o.cyl(1.22, 0.1, 0, 1.42, 0, '#9aa3ab', { col: false, seg: 8 });
+    o.add(geoHalfSph(14), 2.2, 0.7, 0, 1.3, 0.4, 1.3, '#f2f2f2', 0, 0, PI / 2);
+    o.cyl(0.05, 1.0, 1.6, 0.7, 0, '#aaa', { rz: PI / 2, col: false, seg: 4 });
+    o.cyl(0.04, 2.6, -1.0, 0.7, 0.9, '#bbb', { rx: PI / 2, rz: 0.4, col: false, seg: 4 });
+    o.colCyl(1.2, 1.47, 0, 0.735, 0);
+    o.top = { w: 2.2, d: 2.2, h: 1.47 }; return o;
+  },
+  // ---------- new rest platforms ----------
+  restHarbor() {
+    const o = new Obj(); const wood = tint('#9c7046', 0.04);
+    o.box(8, 0.4, 6.5, 0, -0.2, 0, wood);
+    for (let x = -3.6; x <= 3.7; x += 0.8) o.box(0.04, 0.41, 6.5, x, -0.2, 0, '#6e4c2d', { col: false });
+    for (const sx of [-3.7, 3.7]) for (const sz of [-3.0, 0, 3.0]) o.cyl(0.25, 6, sx, -3.0, sz, '#5d4029', { col: false, seg: 8 });
+    o.merge(BUILD.bollard(), 3.0, 0, 2.5, 0);
+    o.top = { w: 8, d: 6.5, h: 0 }; return o;
+  },
+  restFair() {
+    const o = new Obj();
+    o.colCyl(4.3, 1.0, 0, -0.5, 0);
+    o.cyl(4.4, 1.0, 0, -0.5, 0, '#c0392b', { col: false, seg: 16 });
+    for (let i = 0; i < 16; i++) { const a = i / 16 * PI * 2; if (i % 2) o.box(1.7, 1.02, 0.05, Math.cos(a) * 4.3, -0.5, Math.sin(a) * 4.3, '#ffffff', { ry: -a + PI / 2, col: false }); o.sph(0.12, Math.cos(a) * 4.35, 0.02, Math.sin(a) * 4.35, '#ffe066', { seg: 5 }); }
+    o.cyl(4.2, 0.02, 0, 0.005, 0, '#e8d5a8', { col: false, seg: 16 });
+    o.top = { w: 8, d: 8, h: 0 }; return o;
+  },
+});

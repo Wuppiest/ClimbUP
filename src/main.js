@@ -74,7 +74,7 @@ let planet = null;
   pl.add(new T.Mesh(new T.IcosahedronGeometry(160, 3), new T.MeshLambertMaterial({ color: '#d98a5b', flatShading: true })));
   const ring = new T.Mesh(new T.RingGeometry(210, 290, 48), new T.MeshBasicMaterial({ color: '#e8d3a8', side: T.DoubleSide, transparent: true, opacity: 0.55 }));
   ring.rotation.x = -PI / 2 + 0.35; pl.add(ring);
-  pl.position.set(-700, AREAS[5].y0 + 260, -900);
+  pl.position.set(-700, AREAS[AI.space].y0 + 260, -900);
   pl.traverse((o) => { if (o.material) { o.material.fog = false; o.material.transparent = true; o.material.opacity = 0; } });
   scene.add(pl); planet = pl;
 }
@@ -184,12 +184,12 @@ let state = 'menu';       // menu | play | win
 let paused = false;
 let runTime = 0, timerRunning = false;
 let maxArea = 0;
-let best = store.get('best', null);
+let best = store.get('best.map2', null);
 const keys = {};
 const contacts = { ground: null, groundPoint: new V3(), wall: null };
 const _g = new V3(), _w = new V3();
 
-function gravAt(y) { return y > AREAS[5].y0 - 4 ? CFG.G_SPACE : CFG.G; }
+function gravAt(y) { return y > AREAS[AI.space].y0 - 4 ? CFG.G_SPACE : CFG.G; }
 // touch joystick state (filled by the touch controls)
 const TOUCH = { enabled: false, mx: 0, my: 0 };
 function inputDir() {
@@ -542,7 +542,7 @@ function updateEnvironment() {
   scene.fog.color.copy(_c2);
   scene.fog.near = T.MathUtils.lerp(A.fog[0], B.fog[0], t);
   scene.fog.far = T.MathUtils.lerp(A.fog[1], B.fog[1], t);
-  const space = T.MathUtils.clamp((y - (AREAS[4].y0 + 20)) / (AREAS[5].y0 - AREAS[4].y0 - 10), 0, 1);
+  const space = T.MathUtils.clamp((y - (AREAS[AI.clouds].y0 + 20)) / (AREAS[AI.space].y0 - AREAS[AI.clouds].y0 - 10), 0, 1);
   starMat.opacity = space;
   planet.visible = space > 0.01;
   planet.children[0].material.opacity = space; planet.children[1].material.opacity = space * 0.55;
@@ -629,7 +629,7 @@ function win() {
   closeDialog();
   state = 'win'; timerRunning = false;
   const isRecord = best == null || runTime < best;
-  if (isRecord) { best = runTime; store.set('best', best); }
+  if (isRecord) { best = runTime; store.set('best.map2', best); }
   $('winTime').textContent = fmt(runTime);
   $('winRecord').classList.toggle('hidden', !isRecord);
   $('winBest').textContent = 'Bestzeit: ' + fmt(best);
@@ -650,7 +650,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart', 'touchend', 'click']) 
 $('resumeBtn').onclick = () => { $('pause').classList.add('hidden'); paused = false; lock(); };
 $('restartBtn').onclick = () => { resetRun(); $('pause').classList.add('hidden'); paused = false; lock(); };
 $('againBtn').onclick = () => { resetRun(); $('win').classList.add('hidden'); state = 'play'; paused = false; lock(); };
-$('resetBestBtn').onclick = () => { best = null; store.set('best', null); updateBest(); };
+$('resetBestBtn').onclick = () => { best = null; store.set('best.map2', null); updateBest(); };
 canvas.addEventListener('click', () => { if (state === 'play' && !TOUCH.enabled && !document.pointerLockElement) { $('pause').classList.add('hidden'); paused = false; lock(); } });
 document.addEventListener('pointerlockchange', () => {
   if (!document.pointerLockElement && state === 'play' && !TOUCH.enabled) pauseGame();
@@ -735,7 +735,7 @@ function frame(now) {
   SFX.update({
     playing: state === 'play' && !paused, ground: P.state === 'ground', charge: P.charge,
     speed: Math.hypot(P.vel.x, P.vel.z), vy: P.vel.y, grind: P.grind, height: P.pos.y,
-    space: T.MathUtils.clamp((P.pos.y - AREAS[5].y0 + 15) / 20, 0, 1),
+    space: T.MathUtils.clamp((P.pos.y - AREAS[AI.space].y0 + 15) / 20, 0, 1),
   });
   renderer.clear();
   renderer.render(scene, camera);

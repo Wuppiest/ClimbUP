@@ -2,25 +2,33 @@
 //  ClimbUP – world generation (fixed seed -> always the same map)
 // ============================================================
 const AREAS = [
-  { name: 'Schrottplatz', n: 20, cls: [0.72, 0.28, 0], g: CFG.G,
-    b: ['car', 'car', 'barrels', 'tires', 'washer', 'fridge', 'pallets', 'container', 'mattress', 'crt'],
+  { id: 'junk', name: 'Schrottplatz', n: 22, cls: [0.72, 0.28, 0], g: CFG.G,
+    b: ['car', 'car', 'barrels', 'tires', 'washer', 'fridge', 'pallets', 'container', 'mattress', 'crt', 'cart', 'vending', 'arcade'],
     sky: ['#79aee6', '#f0dcb0'], fog: [40, 300] },
-  { name: 'Baustelle', n: 22, cls: [0.42, 0.58, 0], g: CFG.G,
-    b: ['ibeam', 'ibeam', 'pipe', 'scaffold', 'drum', 'toilet', 'concrete', 'bricks', 'container'],
+  { id: 'build', name: 'Baustelle', n: 24, cls: [0.42, 0.58, 0], g: CFG.G, rest: 'rest1',
+    b: ['ibeam', 'ibeam', 'pipe', 'scaffold', 'drum', 'toilet', 'concrete', 'bricks', 'jersey', 'planks', 'pipestack'],
     sky: ['#6ea4dc', '#f4e2bd'], fog: [50, 320] },
-  { name: 'Dächer der Stadt', n: 22, cls: [0.32, 0.58, 0.10], g: CFG.G,
-    b: ['ac', 'tank', 'bus', 'taxi', 'booth', 'dish', 'chimney', 'billboard', 'trafficlight'],
+  { id: 'harbor', name: 'Hafen', n: 22, cls: [0.36, 0.58, 0.06], g: CFG.G, rest: 'restHarbor',
+    b: ['crate', 'crate', 'crateStack', 'buoy', 'bollard', 'rowboat', 'rowboat', 'containers2', 'container'],
+    sky: ['#66a3dc', '#e3ecdf'], fog: [50, 340] },
+  { id: 'city', name: 'Dächer der Stadt', n: 24, cls: [0.32, 0.56, 0.12], g: CFG.G, rest: 'rest2',
+    b: ['ac', 'tank', 'bus', 'taxi', 'booth', 'dish', 'chimney', 'billboard', 'trafficlight', 'vent', 'solar', 'pigeon'],
     sky: ['#5a8fd8', '#ffd6a0'], fog: [60, 360] },
-  { name: 'Riesenzimmer', n: 22, cls: [0.27, 0.55, 0.18], g: CFG.G,
-    b: ['toaster', 'block', 'books', 'mug', 'plates', 'brick', 'pencil', 'cube3', 'dice', 'choco'],
+  { id: 'room', name: 'Riesenzimmer', n: 24, cls: [0.27, 0.55, 0.18], g: CFG.G, rest: 'rest3',
+    b: ['toaster', 'block', 'books', 'mug', 'plates', 'brick', 'pencil', 'cube3', 'dice', 'choco', 'sponge', 'remote', 'cheese', 'cookie'],
     sky: ['#7a6fd0', '#ffbe9a'], fog: [60, 380] },
-  { name: 'Über den Wolken', n: 20, cls: [0.25, 0.5, 0.25], g: CFG.G,
-    b: ['cloud', 'cloud', 'balloon', 'plane', 'island', 'blimp'],
+  { id: 'fair', name: 'Jahrmarkt', n: 22, cls: [0.26, 0.52, 0.22], g: CFG.G, rest: 'restFair',
+    b: ['bumpercar', 'popcorn', 'giftbox', 'giftbox', 'teacup', 'ticket', 'podium'],
+    sky: ['#5d4fb8', '#ffacc4'], fog: [60, 400] },
+  { id: 'clouds', name: 'Über den Wolken', n: 22, cls: [0.25, 0.5, 0.25], g: CFG.G, rest: 'rest4',
+    b: ['cloud', 'cloud', 'balloon', 'plane', 'island', 'blimp', 'gondola', 'paperplane'],
     sky: ['#2f6fd6', '#d3ebff'], fog: [80, 500] },
-  { name: 'Weltraum', n: 20, cls: [0.25, 0.5, 0.25], g: CFG.G_SPACE,
-    b: ['satellite', 'asteroid', 'asteroid', 'rocket', 'module', 'ufo'],
+  { id: 'space', name: 'Weltraum', n: 24, cls: [0.25, 0.5, 0.25], g: CFG.G_SPACE, rest: 'rest5',
+    b: ['satellite', 'asteroid', 'asteroid', 'rocket', 'module', 'ufo', 'rover', 'crystal', 'probe'],
     sky: ['#01020a', '#0d1236'], fog: [200, 1400] },
 ];
+const AI = Object.fromEntries(AREAS.map((a, i) => [a.id, i])); // area index by id
+const LAST = AREAS.length - 1;
 const TUTORIAL = {
   2: ['LEERTASTE HALTEN', '= Sprung aufladen', 'Länger halten = höher'],
   5: ['VOLL AUFLADEN', 'für die ganz hohen Sprünge', 'Achte auf "MAX!"'],
@@ -61,7 +69,7 @@ function makeSign(lines, x, y, z, faceX, faceZ, accent = '#ffb52e') {
 }
 
 function buildWorld() {
-  rng = mulberry32(20261119);
+  rng = mulberry32(20261120); // map 2
   const accs = AREAS.map(() => new MeshAcc());
   const decoAcc = new MeshAcc();   // far background, no shadows
   const placed = [];               // {min,max}
@@ -106,7 +114,8 @@ function buildWorld() {
       const ux = Math.cos(hd), uz = -Math.sin(hd);
       const gap = R(0.9, gapMax) * (t > 30 ? 0.85 : 1);
       const yaw = obj.long ? hd : (isRest ? hd : rng() * PI * 2);
-      const eNext = exitDist({ yaw, w: obj.top.w, d: obj.top.d }, ux, uz);
+      const sp = obj.span || obj.top; // overhangs below the top count when jumping onto it
+      const eNext = exitDist({ yaw, w: sp.w, d: sp.d }, ux, uz);
       const dist = exitDist(prev, ux, uz) + gap + eNext;
       const cx = prev.x + ux * dist, cz = prev.z + uz * dist;
       const cand = { cx, cz, yaw, hd, gap };
@@ -128,7 +137,7 @@ function buildWorld() {
     placeObj(obj, best.cx, topY - obj.top.h, best.cz, best.yaw, acc);
     placed.push(best.box); corridors.push(best.corr);
     prev = { x: best.cx, y: topY, z: best.cz, yaw: best.yaw, w: obj.top.w, d: obj.top.d };
-    WORLD.path.push({ ...prev, area, cls, th: obj.top.h });
+    WORLD.path.push({ ...prev, area, cls, th: obj.top.h, name: obj.name || 'rest' });
     return prev;
   }
 
@@ -136,11 +145,11 @@ function buildWorld() {
     const A = AREAS[a];
     if (a > 0) {
       const ux0 = Math.cos(heading), uz0 = -Math.sin(heading);
-      stepPlace(BUILD['rest' + a](), 'normal', AREAS[a - 1].g, accs[a], a, true);
+      stepPlace(BUILD[A.rest](), 'normal', AREAS[a - 1].g, accs[a], a, true);
       A.y0 = prev.y - 0.6;
       // area sign floating behind the rest platform
       const sx = prev.x + ux0 * 3.2, sz = prev.z + uz0 * 3.2;
-      makeSign(['GEBIET ' + (a + 1), A.name], sx, prev.y + 3.0, sz, -ux0, -uz0, a === 5 ? '#9fd3ff' : '#ffb52e');
+      makeSign(['GEBIET ' + (a + 1), A.name], sx, prev.y + 3.0, sz, -ux0, -uz0, a === AI.space ? '#9fd3ff' : '#ffb52e');
     } else A.y0 = -1e9;
     for (let i = 0; i < A.n; i++) {
       let cls;
@@ -150,8 +159,8 @@ function buildWorld() {
       else { const r = rng(); cls = r < A.cls[0] ? 'normal' : r < A.cls[0] + A.cls[1] ? 'high' : 'perfect'; }
       let name = pick(A.b);
       if (LONG_NARROW.has(name) && cls === 'perfect') name = A.b[0] === name ? A.b[2] : A.b[0];
-      const obj = BUILD[name]();
-      const hd0 = heading;
+      const obj = BUILD[name](); obj.name = name;
+      if (obj.span && cls === 'perfect') cls = 'high'; // no max-height jumps onto things with overhangs
       stepPlace(obj, cls, A.g, accs[a], a, false);
       if (a === 0 && TUTORIAL[i]) {
         const ux = Math.cos(heading), uz = -Math.sin(heading);
@@ -185,13 +194,13 @@ function buildWorld() {
     tub.cyl(0.12, 1.0, -W / 2 + 0.5, H + 0.4, 0, '#c0c0c0', { col: false, seg: 8 });
     tub.cyl(0.1, 0.6, -W / 2 + 0.75, H + 0.85, 0, '#c0c0c0', { rz: PI / 2, col: false, seg: 8 });
     const tubYaw = heading + PI / 2; // long side faces the player
-    placeObj(o, cx, topY, cz, 0, accs[5]);
+    placeObj(o, cx, topY, cz, 0, accs[LAST]);
     const tx = cx + ux * 3.3, tz = cz + uz * 3.3;
-    placeObj(tub, tx, topY, tz, tubYaw, accs[5]);
+    placeObj(tub, tx, topY, tz, tubYaw, accs[LAST]);
     WORLD.duck = { x: tx, y: topY + H - 0.35, z: tz, faceX: -ux, faceZ: -uz, platformY: topY, cx, cz };
     // duck collider (so you can't hop through her)
     const dc = new Obj(); dc.col(4.6, 3.5, 2.8, 0, 1.75, 0);
-    placeObj(dc, tx, topY + H - 0.35, tz, tubYaw, accs[5]);
+    placeObj(dc, tx, topY + H - 0.35, tz, tubYaw, accs[LAST]);
     WORLD.goalY = topY;
     makeSign(['ZIEL', 'Rede mit der Ente (F)'], cx - ux * 2 + (-uz) * 6.5, topY + 3, cz - uz * 2 + ux * 6.5, -ux + uz * 0.6, -uz - ux * 0.6, '#ffe066');
   }
@@ -257,7 +266,34 @@ function buildWorld() {
     o.box(w * 0.4, 3, d * 0.4, 0, h + 1.5, 0, c.clone().multiplyScalar(0.8), { col: false });
     placeObj(o, Math.cos(a) * r, 0, Math.sin(a) * r, rng() * PI, decoAcc, false);
   }
-  const cloudY = AREAS[4].y0;
+  { // giant floating ferris wheel at fair height
+    const o = new Obj(); const Rw = 34, cols = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#e67e22'];
+    o.torus(Rw, 0.02, 0, 0, 0, '#ecf0f1', { seg: 40 });
+    o.torus(Rw - 3, 0.02, 0, 0, 0, '#bdc3c7', { seg: 40 });
+    o.cyl(2.2, 3, 0, 0, 0, '#7f8c8d', { rx: PI / 2, col: false, seg: 10 });
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * PI * 2;
+      o.box(Rw, 0.5, 0.5, Math.cos(a) * Rw / 2, Math.sin(a) * Rw / 2, 0, '#dfe6e9', { rz: a, col: false });
+      const gx = Math.cos(a) * Rw, gy = Math.sin(a) * Rw;
+      o.box(3.2, 2.6, 2.6, gx, gy - 2.4, 0, cols[i % cols.length], { col: false });
+      o.box(3.4, 0.3, 2.8, gx, gy - 1.0, 0, '#ffffff', { col: false });
+      o.sph(0.5, gx, gy, 0, '#ffe066', { seg: 6 });
+    }
+    for (const s of [-1, 1]) o.box(2, Rw * 2.2, 2, s * Rw * 0.45, -Rw * 0.95, 4, '#95a5a6', { rz: s * 0.42, col: false });
+    const fy = AREAS[AI.fair].y0 + 12;
+    placeObj(o, -95, fy, 80, 0.7, decoAcc, false);
+  }
+  { // lighthouse on a floating rock at harbor height
+    const o = new Obj(); const H = 26;
+    o.add(geoCone(9), 0, -10, 0, 14, 20, 14, '#6b6158', PI, 0, 0);
+    o.cyl(14, 1.5, 0, -0.75, 0, '#7d7366', { seg: 9, col: false });
+    for (let i = 0; i < 6; i++) o.cyl(3.6 - i * 0.25, H / 6, 0, H / 12 + i * H / 6, 0, i % 2 ? '#ffffff' : '#d63031', { rt: (3.6 - (i + 1) * 0.25) / (3.6 - i * 0.25), seg: 12, col: false });
+    o.cyl(2.6, 3, 0, H + 1.5, 0, '#fff6b0', { seg: 10, col: false });
+    o.cone(3.2, 3, 0, H + 4.5, 0, '#2c3e50', { seg: 10 });
+    o.box(5, 3, 4, 7, 1.5, 3, '#ecf0f1', { col: false }); o.box(5.4, 0.6, 4.4, 7, 3.3, 3, '#c0392b', { col: false });
+    placeObj(o, 110, AREAS[AI.harbor].y0 - 8, -60, 0, decoAcc, false);
+  }
+  const cloudY = AREAS[AI.clouds].y0;
   for (let i = 0; i < 70; i++) {
     const a = rng() * PI * 2, r = R(70, 420);
     const o = new Obj(); const n = RI(4, 8), s = R(6, 16);
