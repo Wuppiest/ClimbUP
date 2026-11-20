@@ -176,7 +176,28 @@ function queryColliders(minX, minZ, maxX, maxZ, minY, maxY, out) {
     }
   }
   for (const c of BIG_COLLIDERS) if (!(c.max[1] < minY || c.min[1] > maxY)) out.push(c);
+  for (const c of DYN_COLS) { // moving objects
+    if (!c.enabled || c.max[0] < minX || c.min[0] > maxX || c.max[2] < minZ || c.min[2] > maxZ || c.max[1] < minY || c.min[1] > maxY) continue;
+    out.push(c);
+  }
   return out;
+}
+const DYN_COLS = [];
+// recompute an oriented box in place from a local collider spec and a world matrix
+const _oq = new T.Quaternion(), _oq2 = new T.Quaternion(), _ov = new V3(), _ov2 = new V3(), _oe = new T.Euler();
+function updateOBB(o, c, gm, gq) {
+  _ov.set(c.x, c.y, c.z).applyMatrix4(gm);
+  _oq.copy(gq).multiply(_oq2.setFromEuler(_oe.set(c.rx, c.ry, c.rz)));
+  const a = o.a;
+  _ov2.set(1, 0, 0).applyQuaternion(_oq); a[0] = _ov2.x; a[1] = _ov2.y; a[2] = _ov2.z;
+  _ov2.set(0, 1, 0).applyQuaternion(_oq); a[3] = _ov2.x; a[4] = _ov2.y; a[5] = _ov2.z;
+  _ov2.set(0, 0, 1).applyQuaternion(_oq); a[6] = _ov2.x; a[7] = _ov2.y; a[8] = _ov2.z;
+  o.cx = _ov.x; o.cy = _ov.y; o.cz = _ov.z;
+  const ex = Math.abs(a[0]) * o.hx + Math.abs(a[3]) * o.hy + Math.abs(a[6]) * o.hz;
+  const ey = Math.abs(a[1]) * o.hx + Math.abs(a[4]) * o.hy + Math.abs(a[7]) * o.hz;
+  const ez = Math.abs(a[2]) * o.hx + Math.abs(a[5]) * o.hy + Math.abs(a[8]) * o.hz;
+  o.min[0] = o.cx - ex; o.min[1] = o.cy - ey; o.min[2] = o.cz - ez;
+  o.max[0] = o.cx + ex; o.max[1] = o.cy + ey; o.max[2] = o.cz + ez;
 }
 
 // closest point of OBB to p; returns squared distance; writes local info into tmp

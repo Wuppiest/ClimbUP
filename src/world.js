@@ -36,7 +36,7 @@ const TUTORIAL = {
   12: ['LEERTASTE an einer Wand', 'halten = GRINDEN', 'Loslassen = abstoßen!'],
 };
 
-const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], shortcuts: [], signs: [], duck: null, goalY: 0, fails: 0 };
+const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], shortcuts: [], dyn: [], signs: [], duck: null, goalY: 0, fails: 0 };
 
 function exitDist(p, ux, uz) {
   const a = Math.abs(ux * Math.cos(p.yaw) - uz * Math.sin(p.yaw));
@@ -74,6 +74,7 @@ function buildWorld() {
   const decoAcc = new MeshAcc();   // far background, no shadows
   const placed = [];               // {min,max}
   const corridors = [];
+  const pendingMain = [];
   let fails = 0;
 
   // ground (big collider)
@@ -134,7 +135,7 @@ function buildWorld() {
       if (t === 59) fails++;
     }
     heading = best.hd;
-    placeObj(obj, best.cx, topY - obj.top.h, best.cz, best.yaw, acc);
+    pendingMain.push({ obj, x: best.cx, y: topY - obj.top.h, z: best.cz, yaw: best.yaw, acc, k: WORLD.path.length }); // placed later (may become a moving object)
     placed.push(best.box); corridors.push(best.corr);
     prev = { x: best.cx, y: topY, z: best.cz, yaw: best.yaw, w: obj.top.w, d: obj.top.d };
     WORLD.path.push({ ...prev, area, cls, th: obj.top.h, name: obj.name || 'rest' });
@@ -299,6 +300,50 @@ function buildWorld() {
         }
       }
     }
+  }
+
+  // ---------------- moving / special objects on the main path ----------------
+  {
+    const path = WORLD.path;
+    const RULES = {
+      ibeam: { type: 'swing', A: 0.26, T: 4.2, L: 9 },
+      buoy: { type: 'bob', A: 0.45, T: 3.4 }, rowboat: { type: 'bob', A: 0.35, T: 4.2 },
+      bus: { type: 'slide', A: 2.6, T: 7 }, taxi: { type: 'slide', A: 2.2, T: 5.5 },
+      toaster: { type: 'pad' }, plates: { type: 'spin', w: 0.7 },
+      teacup: { type: 'spin', w: 0.9 }, podium: { type: 'spin', w: -0.6 }, bumpercar: { type: 'slide', A: 2.0, T: 4.5 },
+      cloud: { type: 'vanish', chance: 0.6 }, blimp: { type: 'slide', A: 3.0, T: 10 }, balloon: { type: 'bob', A: 0.8, T: 5 },
+      asteroid: { type: 'orbit', r: 1.4, T: 9, w: 0.15 }, satellite: { type: 'spin', w: 0.25 },
+    };
+    const fixed = new Set([0, 1, 2, 3, 4, 5, path.length - 1]);
+    for (const sc of WORLD.shortcuts) { fixed.add(sc.from); fixed.add(sc.to); }
+    let moving = 0;
+    for (const pm of pendingMain) {
+      const k = pm.k, node = path[k], rule = RULES[node.name];
+      let made = false;
+      if (rule && !fixed.has(k) && (rule.chance == null || rng() < rule.chance)) {
+        const prevN = path[k - 1], nextN = path[k + 1];
+        const bobOk = rule.type !== 'bob' || ((!nextN || nextN.cls !== 'perfect') && node.cls !== 'perfect');
+        if (bobOk) {
+          const ix = node.x - prevN.x, iz = node.z - prevN.z, il = Math.hypot(ix, iz) || 1;
+          const motion = { ...rule, ph: rng() * PI * 2, ax: -iz / il, az: ix / il };
+          if (rule.type === 'swing') motion.ph = 0;
+          const obj = pm.obj;
+          if (rule.type === 'swing') { // crane cable + hook
+            const L = obj.top.w;
+            for (const sx of [-L * 0.38, L * 0.38]) obj.add(geoCyl(4), sx / 2, obj.top.h + rule.L / 2, 0, 0.04, Math.hypot(rule.L, sx), 0.04, '#333333', 0, 0, Math.atan2(sx, rule.L));
+            obj.box(0.5, 0.7, 0.35, 0, obj.top.h + rule.L, 0, '#f1c40f', { col: false });
+          }
+          const spec = { obj, base: { x: pm.x, y: pm.y, z: pm.z, yaw: pm.yaw }, motion, k };
+          const sw = dynSweptAABB(spec);
+          let ok = true;
+          for (let q = 0; q < placed.length && ok; q++) if (q !== k - 1 && q !== k && q !== k + 1 && aabbHit(sw, placed[q], 0.6)) ok = false;
+          for (let q = 0; q < corridors.length && ok; q++) if (q !== k - 1 && q !== k && aabbHit(sw, corridors[q], 0.3)) ok = false;
+          if (ok) { WORLD.dyn.push(spec); placed[k] = sw; made = true; moving++; }
+        }
+      }
+      if (!made) placeObj(pm.obj, pm.x, pm.y, pm.z, pm.yaw, pm.acc);
+    }
+    WORLD.moving = moving;
   }
 
   // ---------------- floating junk (decor, but solid – maybe a shortcut?) ----------------

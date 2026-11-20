@@ -161,6 +161,12 @@ const SFX = (() => {
       tone({ type: 'square', f0: 160, f1: 280, f2: 120, t1: 0.12, dur: 0.55, v: 0.12, filter: { type: 'lowpass', f: 900 } });
       noise({ dur: 0.35, v: 0.2, type: 'bandpass', f0: 600, f1: 2500, q: 1.2, delay: 0.1 });
     },
+    ding() { // toaster bell + spring launch
+      tone({ type: 'sine', f0: 2093, dur: 0.6, v: 0.16, verb: 0.4 }); tone({ type: 'sine', f0: 4186, dur: 0.35, v: 0.05 });
+      tone({ type: 'sine', f0: 140, f1: 900, f2: 500, t1: 0.12, dur: 0.45, v: 0.28, vib: 35, vibF: 20, delay: 0.03 });
+      noise({ dur: 0.35, v: 0.15, type: 'bandpass', f0: 600, f1: 3000, q: 1.2 });
+    },
+    poof() { noise({ dur: 0.45, v: 0.22, type: 'lowpass', f0: 2200, f1: 300, q: 0.6 }); tone({ type: 'sine', f0: 500, f1: 180, t1: 0.3, dur: 0.35, v: 0.06, verb: 0.3 }); },
     tick(last) { tone({ type: 'sine', f0: last ? 1320 : 880, dur: 0.07, v: 0.1 }); },
     win() {
       const mel = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.5];

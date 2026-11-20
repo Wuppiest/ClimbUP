@@ -390,7 +390,28 @@ function queryColliders(minX, minZ, maxX, maxZ, minY, maxY, out) {
     }
   }
   for (const c of BIG_COLLIDERS) if (!(c.max[1] < minY || c.min[1] > maxY)) out.push(c);
+  for (const c of DYN_COLS) { // moving objects
+    if (!c.enabled || c.max[0] < minX || c.min[0] > maxX || c.max[2] < minZ || c.min[2] > maxZ || c.max[1] < minY || c.min[1] > maxY) continue;
+    out.push(c);
+  }
   return out;
+}
+const DYN_COLS = [];
+// recompute an oriented box in place from a local collider spec and a world matrix
+const _oq = new T.Quaternion(), _oq2 = new T.Quaternion(), _ov = new V3(), _ov2 = new V3(), _oe = new T.Euler();
+function updateOBB(o, c, gm, gq) {
+  _ov.set(c.x, c.y, c.z).applyMatrix4(gm);
+  _oq.copy(gq).multiply(_oq2.setFromEuler(_oe.set(c.rx, c.ry, c.rz)));
+  const a = o.a;
+  _ov2.set(1, 0, 0).applyQuaternion(_oq); a[0] = _ov2.x; a[1] = _ov2.y; a[2] = _ov2.z;
+  _ov2.set(0, 1, 0).applyQuaternion(_oq); a[3] = _ov2.x; a[4] = _ov2.y; a[5] = _ov2.z;
+  _ov2.set(0, 0, 1).applyQuaternion(_oq); a[6] = _ov2.x; a[7] = _ov2.y; a[8] = _ov2.z;
+  o.cx = _ov.x; o.cy = _ov.y; o.cz = _ov.z;
+  const ex = Math.abs(a[0]) * o.hx + Math.abs(a[3]) * o.hy + Math.abs(a[6]) * o.hz;
+  const ey = Math.abs(a[1]) * o.hx + Math.abs(a[4]) * o.hy + Math.abs(a[7]) * o.hz;
+  const ez = Math.abs(a[2]) * o.hx + Math.abs(a[5]) * o.hy + Math.abs(a[8]) * o.hz;
+  o.min[0] = o.cx - ex; o.min[1] = o.cy - ey; o.min[2] = o.cz - ez;
+  o.max[0] = o.cx + ex; o.max[1] = o.cy + ey; o.max[2] = o.cz + ez;
 }
 
 // closest point of OBB to p; returns squared distance; writes local info into tmp
@@ -1329,6 +1350,146 @@ Object.assign(BUILD, {
 });
 
 // ============================================================
+//  ClimbUP – moving and special objects
+//  motion types: slide (back and forth), bob (up/down), spin, orbit,
+//  swing (pendulum on a crane cable), vanish (cloud that dissolves), pad (toaster launch)
+// ============================================================
+const DYNS = [];
+const _dq = new T.Quaternion(), _dq2 = new T.Quaternion(), _dv = new V3(), _dv2 = new V3(), _dm = new T.Matrix4(), _dm2 = new T.Matrix4();
+const ONE3 = new V3(1, 1, 1);
+
+// world matrix of a moving object at time t
+function dynMatrix(s, t, out) {
+  const b = s.base, m = s.motion;
+  let x = b.x, y = b.y, z = b.z, yaw = b.yaw;
+  switch (m.type) {
+    case 'slide': { const k = Math.sin(2 * PI * t / m.T + m.ph) * m.A; x += m.ax * k; z += m.az * k; break; }
+    case 'bob': y += Math.sin(2 * PI * t / m.T + m.ph) * m.A; break;
+    case 'spin': yaw += m.w * t; break;
+    case 'orbit': { const a = 2 * PI * t / m.T + m.ph; x += Math.cos(a) * m.r; z += Math.sin(a) * m.r; yaw += m.w * t; break; }
+  }
+  out.compose(_dv.set(x, y, z), _dq.setFromAxisAngle(UP, yaw), ONE3);
+  if (m.type === 'swing') { // rotate around the long axis, pivot high above (crane hook)
+    const th = Math.sin(2 * PI * t / m.T + m.ph) * m.A;
+    _dv2.set(Math.cos(b.yaw), 0, -Math.sin(b.yaw));
+    _dm.makeTranslation(b.x, b.y + m.L, b.z);
+    _dm2.makeRotationAxis(_dv2, th); _dm.multiply(_dm2);
+    _dm2.makeTranslation(-b.x, -b.y - m.L, -b.z); _dm.multiply(_dm2);
+    out.premultiply(_dm);
+  }
+  return out;
+}
+function dynPeriod(m) { return m.type === 'spin' ? 2 * PI / Math.abs(m.w) : m.T || 1; }
+// bounding box over the whole motion (used by the generator to avoid collisions)
+function dynSweptAABB(s) {
+  const min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9], M = new T.Matrix4(), q = new T.Quaternion(), sc = new V3(), p = new V3();
+  const per = dynPeriod(s.motion), N = s.motion.type === 'none' || s.motion.type === 'vanish' || s.motion.type === 'pad' ? 1 : 16;
+  for (let i = 0; i < N; i++) {
+    dynMatrix(s, per * i / N, M); M.decompose(p, q, sc);
+    for (const c of s.obj.cols) {
+      const o = makeOBB(c, M, q);
+      for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], o.min[k]); max[k] = Math.max(max[k], o.max[k]); }
+    }
+  }
+  return { min, max };
+}
+
+// ---------- runtime ----------
+function yawOf(M) { const e = M.elements; return Math.atan2(-e[2], e[0]); }
+const DYN = {
+  init(scene, mat) {
+    for (const s of WORLD.dyn) {
+      const acc = new MeshAcc();
+      for (const p of s.obj.parts) acc.add(p.geo, p.m, p.color);
+      const mesh = acc.build(mat); mesh.castShadow = true; mesh.receiveShadow = true; mesh.matrixAutoUpdate = false;
+      scene.add(mesh);
+      const d = { s, mesh, M: new T.Matrix4(), Mprev: new T.Matrix4(), cols: [], q: new T.Quaternion(), state: 'solid', t: 0, scale: 1, armT: 0, cool: 0, extra: null };
+      dynMatrix(s, 0, d.M); d.Mprev.copy(d.M);
+      for (const c of s.obj.cols) { const o = makeOBB(c, d.M, d.q.setFromRotationMatrix(d.M)); o.enabled = true; o.dyn = d; d.cols.push({ spec: c, obb: o }); DYN_COLS.push(o); }
+      if (s.motion.type === 'pad') { // two toast slices that pop out of the slots
+        d.extra = [];
+        for (const z of [-0.45, 0.45]) {
+          const tm = new T.Mesh(new T.BoxGeometry(1.6, 1.3, 0.28), new T.MeshLambertMaterial({ color: '#d9a35b' }));
+          tm.castShadow = true; scene.add(tm); d.extra.push({ mesh: tm, z });
+        }
+      }
+      DYNS.push(d);
+    }
+  },
+  // called once per physics step, before the player moves
+  step(t, dt) {
+    for (const d of DYNS) {
+      d.Mprev.copy(d.M);
+      dynMatrix(d.s, t, d.M);
+      const type = d.s.motion.type;
+      if (type === 'vanish') DYN.vanishStep(d, dt);
+      if (type === 'pad') DYN.padStep(d, dt);
+      d.q.setFromRotationMatrix(d.M);
+      for (const c of d.cols) { updateOBB(c.obb, c.spec, d.M, d.q); c.obb.enabled = d.state !== 'gone'; }
+    }
+  },
+  // move the player along with the object they stand on
+  carry(dt) {
+    const d = P.groundDyn;
+    if (!d || P.state !== 'ground') { P.platVel.set(0, 0, 0); return; }
+    _dm.copy(d.Mprev).invert();
+    _dv.copy(P.pos).applyMatrix4(_dm).applyMatrix4(d.M);
+    P.platVel.set((_dv.x - P.pos.x) / dt, (_dv.y - P.pos.y) / dt, (_dv.z - P.pos.z) / dt);
+    P.pos.copy(_dv);
+    let dy = yawOf(d.M) - yawOf(d.Mprev); dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    P.yaw += dy;
+  },
+  vanishStep(d, dt) {
+    const on = P.groundDyn === d && P.state === 'ground';
+    if (d.state === 'solid' && on) { d.state = 'shake'; d.t = 0; }
+    else if (d.state === 'shake') { d.t += dt; if (d.t > 1.6) { d.state = 'gone'; d.t = 0; SFX.poof(); } }
+    else if (d.state === 'gone') { d.t += dt; if (d.t > 3.5) { d.state = 'back'; d.t = 0; } }
+    else if (d.state === 'back') { d.t += dt; if (d.t > 0.4) d.state = 'solid'; }
+  },
+  padStep(d, dt) {
+    if (d.cool > 0) d.cool -= dt;
+    const on = P.groundDyn === d && P.state === 'ground';
+    if (on && d.cool <= 0) {
+      d.armT += dt;
+      if (d.armT > 0.55) { // DING!
+        const dir = inputDir();
+        const vy = 17 + P.charge * 3;
+        P.state = 'air'; P.charge = 0; P.groundDyn = null; P.peakY = P.pos.y; P.pos.y += 0.02;
+        P.vel.set(dir ? dir.x * CFG.MOVE_SPEED : 0, vy, dir ? dir.z * CFG.MOVE_SPEED : 0);
+        P.fovKick = 10; P.dipV += 4;
+        d.cool = 1.2; d.armT = 0; d.pop = 0;
+        feedback('DING!', '#ffd84a'); SFX.ding();
+      }
+    } else d.armT = 0;
+    if (d.pop != null) { d.pop += dt; if (d.pop > 1.2) d.pop = null; }
+  },
+  // visuals, once per rendered frame
+  render() {
+    for (const d of DYNS) {
+      d.mesh.matrix.copy(d.M);
+      const type = d.s.motion.type;
+      if (type === 'vanish') {
+        let sc = 1, jx = 0, jz = 0;
+        if (d.state === 'shake') { jx = (Math.random() - 0.5) * 0.09 * d.t; jz = (Math.random() - 0.5) * 0.09 * d.t; sc = 1 - d.t * 0.06; }
+        else if (d.state === 'gone') sc = Math.max(0.001, 1 - d.t * 4);
+        else if (d.state === 'back') sc = Math.min(1, d.t / 0.4);
+        _dm.makeScale(sc, sc, sc); _dm.setPosition(jx, 0, jz);
+        d.mesh.matrix.copy(d.M).multiply(_dm);
+        d.mesh.visible = sc > 0.01;
+      }
+      if (d.extra) { // toast pop: up fast, falls back into the toaster
+        const p = d.pop != null ? Math.max(0, Math.sin(Math.min(1, d.pop / 1.2) * PI)) * 2.2 : 0;
+        const arm = P.groundDyn === d ? Math.min(1, d.armT / 0.55) * 0.12 : 0;
+        for (const e of d.extra) {
+          _dv.set(0, 1.75 + p + arm + (Math.random() - 0.5) * arm * 0.4, e.z).applyMatrix4(d.M);
+          e.mesh.position.copy(_dv); e.mesh.rotation.y = d.s.base.yaw;
+        }
+      }
+    }
+  },
+};
+
+// ============================================================
 //  ClimbUP – world generation (fixed seed -> always the same map)
 // ============================================================
 const AREAS = [
@@ -1366,7 +1527,7 @@ const TUTORIAL = {
   12: ['LEERTASTE an einer Wand', 'halten = GRINDEN', 'Loslassen = abstoßen!'],
 };
 
-const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], shortcuts: [], signs: [], duck: null, goalY: 0, fails: 0 };
+const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], shortcuts: [], dyn: [], signs: [], duck: null, goalY: 0, fails: 0 };
 
 function exitDist(p, ux, uz) {
   const a = Math.abs(ux * Math.cos(p.yaw) - uz * Math.sin(p.yaw));
@@ -1404,6 +1565,7 @@ function buildWorld() {
   const decoAcc = new MeshAcc();   // far background, no shadows
   const placed = [];               // {min,max}
   const corridors = [];
+  const pendingMain = [];
   let fails = 0;
 
   // ground (big collider)
@@ -1464,7 +1626,7 @@ function buildWorld() {
       if (t === 59) fails++;
     }
     heading = best.hd;
-    placeObj(obj, best.cx, topY - obj.top.h, best.cz, best.yaw, acc);
+    pendingMain.push({ obj, x: best.cx, y: topY - obj.top.h, z: best.cz, yaw: best.yaw, acc, k: WORLD.path.length }); // placed later (may become a moving object)
     placed.push(best.box); corridors.push(best.corr);
     prev = { x: best.cx, y: topY, z: best.cz, yaw: best.yaw, w: obj.top.w, d: obj.top.d };
     WORLD.path.push({ ...prev, area, cls, th: obj.top.h, name: obj.name || 'rest' });
@@ -1629,6 +1791,50 @@ function buildWorld() {
         }
       }
     }
+  }
+
+  // ---------------- moving / special objects on the main path ----------------
+  {
+    const path = WORLD.path;
+    const RULES = {
+      ibeam: { type: 'swing', A: 0.26, T: 4.2, L: 9 },
+      buoy: { type: 'bob', A: 0.45, T: 3.4 }, rowboat: { type: 'bob', A: 0.35, T: 4.2 },
+      bus: { type: 'slide', A: 2.6, T: 7 }, taxi: { type: 'slide', A: 2.2, T: 5.5 },
+      toaster: { type: 'pad' }, plates: { type: 'spin', w: 0.7 },
+      teacup: { type: 'spin', w: 0.9 }, podium: { type: 'spin', w: -0.6 }, bumpercar: { type: 'slide', A: 2.0, T: 4.5 },
+      cloud: { type: 'vanish', chance: 0.6 }, blimp: { type: 'slide', A: 3.0, T: 10 }, balloon: { type: 'bob', A: 0.8, T: 5 },
+      asteroid: { type: 'orbit', r: 1.4, T: 9, w: 0.15 }, satellite: { type: 'spin', w: 0.25 },
+    };
+    const fixed = new Set([0, 1, 2, 3, 4, 5, path.length - 1]);
+    for (const sc of WORLD.shortcuts) { fixed.add(sc.from); fixed.add(sc.to); }
+    let moving = 0;
+    for (const pm of pendingMain) {
+      const k = pm.k, node = path[k], rule = RULES[node.name];
+      let made = false;
+      if (rule && !fixed.has(k) && (rule.chance == null || rng() < rule.chance)) {
+        const prevN = path[k - 1], nextN = path[k + 1];
+        const bobOk = rule.type !== 'bob' || ((!nextN || nextN.cls !== 'perfect') && node.cls !== 'perfect');
+        if (bobOk) {
+          const ix = node.x - prevN.x, iz = node.z - prevN.z, il = Math.hypot(ix, iz) || 1;
+          const motion = { ...rule, ph: rng() * PI * 2, ax: -iz / il, az: ix / il };
+          if (rule.type === 'swing') motion.ph = 0;
+          const obj = pm.obj;
+          if (rule.type === 'swing') { // crane cable + hook
+            const L = obj.top.w;
+            for (const sx of [-L * 0.38, L * 0.38]) obj.add(geoCyl(4), sx / 2, obj.top.h + rule.L / 2, 0, 0.04, Math.hypot(rule.L, sx), 0.04, '#333333', 0, 0, Math.atan2(sx, rule.L));
+            obj.box(0.5, 0.7, 0.35, 0, obj.top.h + rule.L, 0, '#f1c40f', { col: false });
+          }
+          const spec = { obj, base: { x: pm.x, y: pm.y, z: pm.z, yaw: pm.yaw }, motion, k };
+          const sw = dynSweptAABB(spec);
+          let ok = true;
+          for (let q = 0; q < placed.length && ok; q++) if (q !== k - 1 && q !== k && q !== k + 1 && aabbHit(sw, placed[q], 0.6)) ok = false;
+          for (let q = 0; q < corridors.length && ok; q++) if (q !== k - 1 && q !== k && aabbHit(sw, corridors[q], 0.3)) ok = false;
+          if (ok) { WORLD.dyn.push(spec); placed[k] = sw; made = true; moving++; }
+        }
+      }
+      if (!made) placeObj(pm.obj, pm.x, pm.y, pm.z, pm.yaw, pm.acc);
+    }
+    WORLD.moving = moving;
   }
 
   // ---------------- floating junk (decor, but solid – maybe a shortcut?) ----------------
@@ -1894,6 +2100,12 @@ const SFX = (() => {
       tone({ type: 'square', f0: 160, f1: 280, f2: 120, t1: 0.12, dur: 0.55, v: 0.12, filter: { type: 'lowpass', f: 900 } });
       noise({ dur: 0.35, v: 0.2, type: 'bandpass', f0: 600, f1: 2500, q: 1.2, delay: 0.1 });
     },
+    ding() { // toaster bell + spring launch
+      tone({ type: 'sine', f0: 2093, dur: 0.6, v: 0.16, verb: 0.4 }); tone({ type: 'sine', f0: 4186, dur: 0.35, v: 0.05 });
+      tone({ type: 'sine', f0: 140, f1: 900, f2: 500, t1: 0.12, dur: 0.45, v: 0.28, vib: 35, vibF: 20, delay: 0.03 });
+      noise({ dur: 0.35, v: 0.15, type: 'bandpass', f0: 600, f1: 3000, q: 1.2 });
+    },
+    poof() { noise({ dur: 0.45, v: 0.22, type: 'lowpass', f0: 2200, f1: 300, q: 0.6 }); tone({ type: 'sine', f0: 500, f1: 180, t1: 0.3, dur: 0.35, v: 0.06, verb: 0.3 }); },
     tick(last) { tone({ type: 'sine', f0: last ? 1320 : 880, dur: 0.07, v: 0.1 }); },
     win() {
       const mel = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.5];
@@ -1994,7 +2206,8 @@ const built = buildWorld();
 for (const acc of built.accs) { const m = acc.build(worldMat); m.castShadow = true; m.receiveShadow = true; scene.add(m); }
 { const m = built.decoAcc.build(worldMat); m.receiveShadow = true; scene.add(m); }
 for (const s of WORLD.signs) scene.add(s);
-console.log('[ClimbUP] world built in', Math.round(performance.now() - t0), 'ms, colliders:', COLLIDERS.length, 'path steps:', WORLD.path.length, 'placement fallbacks:', WORLD.fails);
+DYN.init(scene, worldMat);
+console.log('[ClimbUP] world built in', Math.round(performance.now() - t0), 'ms, colliders:', COLLIDERS.length, 'path steps:', WORLD.path.length, 'placement fallbacks:', WORLD.fails, 'moving:', WORLD.moving, 'shortcuts:', WORLD.shortcuts.length);
 
 { // ground
   const g = new T.Mesh(new T.PlaneGeometry(2400, 2400), new T.MeshLambertMaterial({ color: '#8a7656' }));
@@ -2110,7 +2323,7 @@ const P = {
   state: 'air', charge: 0, chargeVis: 0, sneakVis: 0, coyote: 0, tap: false,
   landPoint: new V3(), landN: new V3(0, 1, 0),
   grind: false, grindT: 0, wallN: new V3(), lostT: 0, grindCd: 0, kicked: false, lastKickN: new V3(),
-  peakY: 0, dip: 0, dipV: 0, fovKick: 0,
+  peakY: 0, dip: 0, dipV: 0, fovKick: 0, groundDyn: null, platVel: new V3(),
 };
 const flag = { carried: true, pos: new V3(), pending: false };
 const stats = { falls: 0, respawns: 0 };
@@ -2121,7 +2334,7 @@ let runTime = 0, timerRunning = false;
 let maxArea = 0;
 let best = store.get('best.map2', null);
 const keys = {};
-const contacts = { ground: null, groundPoint: new V3(), wall: null };
+const contacts = { ground: null, groundPoint: new V3(), wall: null, groundCol: null };
 const _g = new V3(), _w = new V3();
 
 function gravAt(y) { return y > AREAS[AI.space].y0 - 4 ? CFG.G_SPACE : CFG.G; }
@@ -2140,7 +2353,7 @@ function inputDir() {
 // ---------------- physics ----------------
 const cand = [];
 function resolveCollisions() {
-  contacts.ground = null; contacts.wall = null;
+  contacts.ground = null; contacts.wall = null; contacts.groundCol = null;
   const r = CFG.RADIUS;
   queryColliders(P.pos.x - 1, P.pos.z - 1, P.pos.x + 1, P.pos.z + 1, P.pos.y - 0.5, P.pos.y + 2.3, cand);
   for (let iter = 0; iter < 3; iter++) {
@@ -2153,7 +2366,7 @@ function resolveCollisions() {
         P.pos.x += nx * _cp.pen; P.pos.y += ny * _cp.pen; P.pos.z += nz * _cp.pen;
         const vn = P.vel.x * nx + P.vel.y * ny + P.vel.z * nz;
         if (vn < 0) { P.vel.x -= nx * vn; P.vel.y -= ny * vn; P.vel.z -= nz * vn; }
-        if (s === 0 && ny > 0.7) { contacts.ground = _g.set(nx, ny, nz); contacts.groundPoint.set(_cp.x, _cp.y, _cp.z); }
+        if (s === 0 && ny > 0.7) { contacts.ground = _g.set(nx, ny, nz); contacts.groundPoint.set(_cp.x, _cp.y, _cp.z); contacts.groundCol = c; }
         else if (Math.abs(ny) < 0.4) { const l = Math.hypot(nx, nz); contacts.wall = _w.set(nx / l, 0, nz / l); }
       }
     }
@@ -2163,6 +2376,8 @@ function resolveCollisions() {
 
 function step(dt) {
   clock += dt;
+  DYN.step(clock, dt);
+  DYN.carry(dt);
   if (P.grindCd > 0) P.grindCd -= dt;
   const g = gravAt(P.pos.y);
   const dir = inputDir();
@@ -2220,18 +2435,22 @@ function groundStep(dt, dir) {
       else { P.vel.x = 0; P.vel.z = 0; }
     }
   }
-  P.vel.y = -2; // keep pressed onto the ground (follows small steps / slopes)
+  // keep pressed onto the ground along its normal (no sliding on tilted surfaces, follows small steps)
+  const n = P.landN;
   const ox = P.pos.x, oy = P.pos.y, oz = P.pos.z;
-  P.pos.addScaledVector(P.vel, dt);
+  P.vel.y = 0;
+  P.pos.x += (P.vel.x - n.x * 2) * dt; P.pos.y += -n.y * 2 * dt; P.pos.z += (P.vel.z - n.z * 2) * dt;
   resolveCollisions();
   if (sneaking() && P.coyote === 0 && !hasGround(P.pos.x, P.pos.y, P.pos.z) && hasGround(ox, oy, oz)) {
     P.pos.set(ox, oy, oz); P.vel.x = 0; P.vel.z = 0; // never get pushed over the edge while sneaking
   }
   if (contacts.ground) {
     P.coyote = 0;
+    P.groundDyn = contacts.groundCol && contacts.groundCol.dyn || null;
     P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
   } else if ((P.coyote += dt) > 0.06) { // rolled off an edge
-    P.state = 'air'; P.vel.y = 0; P.peakY = P.pos.y; P.charge = 0;
+    P.state = 'air'; P.vel.y = 0; P.peakY = P.pos.y; P.charge = 0; P.groundDyn = null;
+    P.vel.x += P.platVel.x; P.vel.z += P.platVel.z;
   }
   P.vel.y = 0;
   if (P.pos.y < -60) respawn(true);
@@ -2276,6 +2495,7 @@ function land(preVy) {
   if (P.grind) endGrind();
   P.kicked = false;
   P.state = 'ground'; P.coyote = 0; P.charge = 0; P.tap = false;
+  P.groundDyn = contacts.groundCol && contacts.groundCol.dyn || null; P.platVel.set(0, 0, 0);
   P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
   P.vel.set(P.vel.x * 0.3, 0, P.vel.z * 0.3);
   const impact = -preVy;
@@ -2290,7 +2510,8 @@ function launch(dir) {
   const vy = CFG.HOP_MOVE + (CFG.HOP_PERFECT - CFG.HOP_MOVE) * c;
   if (dir) P.vel.set(dir.x * CFG.MOVE_SPEED, vy, dir.z * CFG.MOVE_SPEED);
   else P.vel.set(0, vy, 0);
-  P.state = 'air'; P.charge = 0; P.peakY = P.pos.y; P.pos.y += 0.005;
+  P.vel.x += P.platVel.x; P.vel.z += P.platVel.z; P.vel.y += Math.max(0, P.platVel.y); // keep the momentum of a moving platform
+  P.state = 'air'; P.charge = 0; P.peakY = P.pos.y; P.pos.y += 0.005; P.groundDyn = null;
   P.dipV += 1.5 + c * 2.5; P.fovKick = c * 8;
   if (c >= 1) feedback('MAX!', '#ffd84a');
   SFX.jump(c);
@@ -2299,7 +2520,7 @@ function launch(dir) {
 function respawn(auto) {
   if (!flag.carried) P.pos.copy(flag.pos).add(new V3(0, 0.05, 0));
   else P.pos.copy(WORLD.start);
-  P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
+  P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0; P.groundDyn = null;
   stats.respawns++;
   SFX.respawn();
   toast(auto ? 'Aus der Welt gefallen – Respawn.' : (flag.carried ? 'Zurück zum Start.' : 'Respawn an der Flagge.'));
@@ -2308,6 +2529,7 @@ function respawn(auto) {
 
 // ---------------- flag ----------------
 function tryPlaceFlag() {
+  if (P.groundDyn) { toast('Hier nicht – das Ding bewegt sich!'); SFX.error(); return; }
   if (P.landN.y < 0.95) { toast('Boden zu schräg – Flagge nicht gesetzt.'); SFX.error(); return; }
   flag.pos.copy(P.landPoint); flag.carried = false; flag.pending = false;
   flagGroup.position.copy(flag.pos); flagGroup.visible = true;
@@ -2386,7 +2608,7 @@ function chooseOption(i) {
 function duckPush() {
   closeDialog();
   const dx = P.pos.x - WORLD.duck.x, dz = P.pos.z - WORLD.duck.z, l = Math.hypot(dx, dz) || 1;
-  P.state = 'air'; P.grind = false;
+  P.state = 'air'; P.grind = false; P.groundDyn = null;
   P.vel.set(dx / l * 15, 7, dz / l * 15); P.pos.y += 0.05;
   feedback('QUAAAK!', '#ffd21f');
   SFX.quack();
@@ -2553,7 +2775,7 @@ function updateVisuals(dt) {
 // ---------------- game flow ----------------
 function resetRun() {
   P.pos.copy(WORLD.start); P.vel.set(0, 0, 0); P.yaw = WORLD.startYaw; P.pitch = -0.05;
-  P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
+  P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0; P.groundDyn = null;
   flag.carried = true; flag.pending = false; flagGroup.visible = false;
   stats.falls = 0; stats.respawns = 0;
   runTime = 0; timerRunning = false; maxArea = 0;
@@ -2665,6 +2887,7 @@ function frame(now) {
   }
   updateEnvironment();
   updateVisuals(dt);
+  DYN.render();
   if (state === 'play') updateHUD(dt);
   if (TOUCH.update) TOUCH.update();
   SFX.update({

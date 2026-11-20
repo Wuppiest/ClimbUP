@@ -59,7 +59,8 @@ const built = buildWorld();
 for (const acc of built.accs) { const m = acc.build(worldMat); m.castShadow = true; m.receiveShadow = true; scene.add(m); }
 { const m = built.decoAcc.build(worldMat); m.receiveShadow = true; scene.add(m); }
 for (const s of WORLD.signs) scene.add(s);
-console.log('[ClimbUP] world built in', Math.round(performance.now() - t0), 'ms, colliders:', COLLIDERS.length, 'path steps:', WORLD.path.length, 'placement fallbacks:', WORLD.fails);
+DYN.init(scene, worldMat);
+console.log('[ClimbUP] world built in', Math.round(performance.now() - t0), 'ms, colliders:', COLLIDERS.length, 'path steps:', WORLD.path.length, 'placement fallbacks:', WORLD.fails, 'moving:', WORLD.moving, 'shortcuts:', WORLD.shortcuts.length);
 
 { // ground
   const g = new T.Mesh(new T.PlaneGeometry(2400, 2400), new T.MeshLambertMaterial({ color: '#8a7656' }));
@@ -175,7 +176,7 @@ const P = {
   state: 'air', charge: 0, chargeVis: 0, sneakVis: 0, coyote: 0, tap: false,
   landPoint: new V3(), landN: new V3(0, 1, 0),
   grind: false, grindT: 0, wallN: new V3(), lostT: 0, grindCd: 0, kicked: false, lastKickN: new V3(),
-  peakY: 0, dip: 0, dipV: 0, fovKick: 0,
+  peakY: 0, dip: 0, dipV: 0, fovKick: 0, groundDyn: null, platVel: new V3(),
 };
 const flag = { carried: true, pos: new V3(), pending: false };
 const stats = { falls: 0, respawns: 0 };
@@ -186,7 +187,7 @@ let runTime = 0, timerRunning = false;
 let maxArea = 0;
 let best = store.get('best.map2', null);
 const keys = {};
-const contacts = { ground: null, groundPoint: new V3(), wall: null };
+const contacts = { ground: null, groundPoint: new V3(), wall: null, groundCol: null };
 const _g = new V3(), _w = new V3();
 
 function gravAt(y) { return y > AREAS[AI.space].y0 - 4 ? CFG.G_SPACE : CFG.G; }
@@ -205,7 +206,7 @@ function inputDir() {
 // ---------------- physics ----------------
 const cand = [];
 function resolveCollisions() {
-  contacts.ground = null; contacts.wall = null;
+  contacts.ground = null; contacts.wall = null; contacts.groundCol = null;
   const r = CFG.RADIUS;
   queryColliders(P.pos.x - 1, P.pos.z - 1, P.pos.x + 1, P.pos.z + 1, P.pos.y - 0.5, P.pos.y + 2.3, cand);
   for (let iter = 0; iter < 3; iter++) {
@@ -218,7 +219,7 @@ function resolveCollisions() {
         P.pos.x += nx * _cp.pen; P.pos.y += ny * _cp.pen; P.pos.z += nz * _cp.pen;
         const vn = P.vel.x * nx + P.vel.y * ny + P.vel.z * nz;
         if (vn < 0) { P.vel.x -= nx * vn; P.vel.y -= ny * vn; P.vel.z -= nz * vn; }
-        if (s === 0 && ny > 0.7) { contacts.ground = _g.set(nx, ny, nz); contacts.groundPoint.set(_cp.x, _cp.y, _cp.z); }
+        if (s === 0 && ny > 0.7) { contacts.ground = _g.set(nx, ny, nz); contacts.groundPoint.set(_cp.x, _cp.y, _cp.z); contacts.groundCol = c; }
         else if (Math.abs(ny) < 0.4) { const l = Math.hypot(nx, nz); contacts.wall = _w.set(nx / l, 0, nz / l); }
       }
     }
@@ -228,6 +229,8 @@ function resolveCollisions() {
 
 function step(dt) {
   clock += dt;
+  DYN.step(clock, dt);
+  DYN.carry(dt);
   if (P.grindCd > 0) P.grindCd -= dt;
   const g = gravAt(P.pos.y);
   const dir = inputDir();
@@ -285,18 +288,22 @@ function groundStep(dt, dir) {
       else { P.vel.x = 0; P.vel.z = 0; }
     }
   }
-  P.vel.y = -2; // keep pressed onto the ground (follows small steps / slopes)
+  // keep pressed onto the ground along its normal (no sliding on tilted surfaces, follows small steps)
+  const n = P.landN;
   const ox = P.pos.x, oy = P.pos.y, oz = P.pos.z;
-  P.pos.addScaledVector(P.vel, dt);
+  P.vel.y = 0;
+  P.pos.x += (P.vel.x - n.x * 2) * dt; P.pos.y += -n.y * 2 * dt; P.pos.z += (P.vel.z - n.z * 2) * dt;
   resolveCollisions();
   if (sneaking() && P.coyote === 0 && !hasGround(P.pos.x, P.pos.y, P.pos.z) && hasGround(ox, oy, oz)) {
     P.pos.set(ox, oy, oz); P.vel.x = 0; P.vel.z = 0; // never get pushed over the edge while sneaking
   }
   if (contacts.ground) {
     P.coyote = 0;
+    P.groundDyn = contacts.groundCol && contacts.groundCol.dyn || null;
     P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
   } else if ((P.coyote += dt) > 0.06) { // rolled off an edge
-    P.state = 'air'; P.vel.y = 0; P.peakY = P.pos.y; P.charge = 0;
+    P.state = 'air'; P.vel.y = 0; P.peakY = P.pos.y; P.charge = 0; P.groundDyn = null;
+    P.vel.x += P.platVel.x; P.vel.z += P.platVel.z;
   }
   P.vel.y = 0;
   if (P.pos.y < -60) respawn(true);
@@ -341,6 +348,7 @@ function land(preVy) {
   if (P.grind) endGrind();
   P.kicked = false;
   P.state = 'ground'; P.coyote = 0; P.charge = 0; P.tap = false;
+  P.groundDyn = contacts.groundCol && contacts.groundCol.dyn || null; P.platVel.set(0, 0, 0);
   P.landPoint.copy(contacts.groundPoint); P.landN.copy(contacts.ground);
   P.vel.set(P.vel.x * 0.3, 0, P.vel.z * 0.3);
   const impact = -preVy;
@@ -355,7 +363,8 @@ function launch(dir) {
   const vy = CFG.HOP_MOVE + (CFG.HOP_PERFECT - CFG.HOP_MOVE) * c;
   if (dir) P.vel.set(dir.x * CFG.MOVE_SPEED, vy, dir.z * CFG.MOVE_SPEED);
   else P.vel.set(0, vy, 0);
-  P.state = 'air'; P.charge = 0; P.peakY = P.pos.y; P.pos.y += 0.005;
+  P.vel.x += P.platVel.x; P.vel.z += P.platVel.z; P.vel.y += Math.max(0, P.platVel.y); // keep the momentum of a moving platform
+  P.state = 'air'; P.charge = 0; P.peakY = P.pos.y; P.pos.y += 0.005; P.groundDyn = null;
   P.dipV += 1.5 + c * 2.5; P.fovKick = c * 8;
   if (c >= 1) feedback('MAX!', '#ffd84a');
   SFX.jump(c);
@@ -364,7 +373,7 @@ function launch(dir) {
 function respawn(auto) {
   if (!flag.carried) P.pos.copy(flag.pos).add(new V3(0, 0.05, 0));
   else P.pos.copy(WORLD.start);
-  P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
+  P.vel.set(0, 0, 0); P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0; P.groundDyn = null;
   stats.respawns++;
   SFX.respawn();
   toast(auto ? 'Aus der Welt gefallen – Respawn.' : (flag.carried ? 'Zurück zum Start.' : 'Respawn an der Flagge.'));
@@ -373,6 +382,7 @@ function respawn(auto) {
 
 // ---------------- flag ----------------
 function tryPlaceFlag() {
+  if (P.groundDyn) { toast('Hier nicht – das Ding bewegt sich!'); SFX.error(); return; }
   if (P.landN.y < 0.95) { toast('Boden zu schräg – Flagge nicht gesetzt.'); SFX.error(); return; }
   flag.pos.copy(P.landPoint); flag.carried = false; flag.pending = false;
   flagGroup.position.copy(flag.pos); flagGroup.visible = true;
@@ -451,7 +461,7 @@ function chooseOption(i) {
 function duckPush() {
   closeDialog();
   const dx = P.pos.x - WORLD.duck.x, dz = P.pos.z - WORLD.duck.z, l = Math.hypot(dx, dz) || 1;
-  P.state = 'air'; P.grind = false;
+  P.state = 'air'; P.grind = false; P.groundDyn = null;
   P.vel.set(dx / l * 15, 7, dz / l * 15); P.pos.y += 0.05;
   feedback('QUAAAK!', '#ffd21f');
   SFX.quack();
@@ -618,7 +628,7 @@ function updateVisuals(dt) {
 // ---------------- game flow ----------------
 function resetRun() {
   P.pos.copy(WORLD.start); P.vel.set(0, 0, 0); P.yaw = WORLD.startYaw; P.pitch = -0.05;
-  P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0;
+  P.state = 'air'; P.grind = false; P.kicked = false; P.peakY = P.pos.y; P.charge = 0; P.groundDyn = null;
   flag.carried = true; flag.pending = false; flagGroup.visible = false;
   stats.falls = 0; stats.respawns = 0;
   runTime = 0; timerRunning = false; maxArea = 0;
@@ -730,6 +740,7 @@ function frame(now) {
   }
   updateEnvironment();
   updateVisuals(dt);
+  DYN.render();
   if (state === 'play') updateHUD(dt);
   if (TOUCH.update) TOUCH.update();
   SFX.update({
