@@ -92,10 +92,27 @@ const flagGroup = new T.Group();
   cloth.position.set(0.05, 2.0, 0); cloth.castShadow = true; flagGroup.add(cloth); flagGroup.userData.cloth = cloth;
   const base = new T.Mesh(new T.CylinderGeometry(0.35, 0.4, 0.12, 12), new T.MeshLambertMaterial({ color: '#555' }));
   base.position.y = 0.06; flagGroup.add(base);
-  const beam = new T.Mesh(new T.CylinderGeometry(0.25, 0.25, 60, 10, 1, true), new T.MeshBasicMaterial({ color: '#ff4a3d', transparent: true, opacity: 0.18, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false }));
-  beam.position.y = 31; flagGroup.add(beam);
   flagGroup.visible = false; scene.add(flagGroup);
 }
+// ghost plane at the flag's height: shows from above how deep you would fall back (no collision)
+const flagPlaneMat = new T.ShaderMaterial({
+  uniforms: { uAlpha: { value: 0 }, uTime: { value: 0 } },
+  vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform float uAlpha; uniform float uTime; varying vec2 vP;
+    void main(){
+      float d = length(vP);
+      float fade = 1.0 - smoothstep(12.0, 70.0, d);
+      vec2 g = abs(fract(vP / 2.0 - 0.5) - 0.5) / fwidth(vP / 2.0);
+      float grid = 1.0 - min(min(g.x, g.y), 1.0);
+      float ring = smoothstep(0.35, 0.0, abs(fract(d / 6.0 - uTime * 0.25) - 0.5) * 6.0 - 2.6);
+      float a = (0.10 + grid * 0.22 + ring * 0.10) * fade * uAlpha;
+      gl_FragColor = vec4(mix(vec3(1.0, 0.25, 0.2), vec3(1.0, 0.6, 0.5), grid), a);
+    }`,
+  transparent: true, depthWrite: false, side: T.DoubleSide, fog: false,
+});
+const flagPlane = new T.Mesh(new T.CircleGeometry(70, 64), flagPlaneMat);
+flagPlane.rotation.x = -PI / 2; flagPlane.renderOrder = 3; flagPlane.visible = false;
+scene.add(flagPlane);
 const clothBase = flagGroup.userData.cloth.geometry.attributes.position.array.slice();
 
 // ---------------- duck ----------------
@@ -354,6 +371,7 @@ function tryPlaceFlag() {
   if (P.landN.y < 0.95) { toast('Boden zu schräg – Flagge nicht gesetzt.'); return; }
   flag.pos.copy(P.landPoint); flag.carried = false; flag.pending = false;
   flagGroup.position.copy(flag.pos); flagGroup.visible = true;
+  flagPlane.position.set(flag.pos.x, flag.pos.y + 0.03, flag.pos.z);
   toast('🚩 Flagge gesetzt!');
 }
 function pressE() {
@@ -558,6 +576,12 @@ function updateVisuals(dt) {
     if (bestT < 80) { ring.visible = true; ring.position.set(P.pos.x, P.pos.y + 0.05 - bestT + 0.03, P.pos.z); const s = 1 + bestT * 0.04; ring.scale.set(s, s, s); }
   }
 
+  // checkpoint height plane: visible while you are above the flag
+  const above = P.pos.y - flag.pos.y;
+  const targetA = !flag.carried && above > 0.5 ? Math.min(1, (above - 0.5) / 2) : 0;
+  flagPlaneMat.uniforms.uAlpha.value += (targetA - flagPlaneMat.uniforms.uAlpha.value) * Math.min(1, 6 * dt);
+  flagPlaneMat.uniforms.uTime.value = clock;
+  flagPlane.visible = flagPlaneMat.uniforms.uAlpha.value > 0.01;
   // flag cloth waving
   if (flagGroup.visible) {
     const arr = flagGroup.userData.cloth.geometry.attributes.position;
