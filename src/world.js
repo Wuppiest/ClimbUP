@@ -36,7 +36,7 @@ const TUTORIAL = {
   12: ['LEERTASTE an einer Wand', 'halten = GRINDEN', 'Loslassen = abstoßen!'],
 };
 
-const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], signs: [], duck: null, goalY: 0, fails: 0 };
+const WORLD = { start: new V3(0, 0.31, 0), startYaw: -PI / 2, path: [], shortcuts: [], signs: [], duck: null, goalY: 0, fails: 0 };
 
 function exitDist(p, ux, uz) {
   const a = Math.abs(ux * Math.cos(p.yaw) - uz * Math.sin(p.yaw));
@@ -203,6 +203,102 @@ function buildWorld() {
     placeObj(dc, tx, topY + H - 0.35, tz, tubYaw, accs[LAST]);
     WORLD.goalY = topY;
     makeSign(['ZIEL', 'Rede mit der Ente (F)'], cx - ux * 2 + (-uz) * 6.5, topY + 3, cz - uz * 2 + ux * 6.5, -ux + uz * 0.6, -uz - ux * 0.6, '#ffe066');
+  }
+
+  // ---------------- shortcuts: harder side routes that skip part of the main path ----------------
+  // placed[k] / WORLD.path[k] are the main path tops, corridors[k-1] is the jump into path[k]
+  {
+    const path = WORLD.path;
+    const gold = '#ffcf33';
+    const isOk = (box, skip) => {
+      for (let k = 0; k < placed.length; k++) if (!skip.has(k) && aabbHit(box, placed[k], 0.9)) return false;
+      for (let k = 0; k < corridors.length; k++) if (aabbHit(box, corridors[k], 0.4)) return false;
+      return true;
+    };
+    const corrOk = (corr, skip) => {
+      for (let k = 0; k < placed.length; k++) if (!skip.has(k) && aabbHit(corr, placed[k], 0.2)) return false;
+      return true;
+    };
+    let lastFork = 8;
+    for (let i = 10; i < path.length - 8; i++) {
+      const A = path[i];
+      if (i - lastFork < 6 || A.area === 0) continue;
+      const area = AREAS[A.area], g = area.g;
+      const hmaxP = CFG.HOP_PERFECT ** 2 / (2 * g);
+      let done = false;
+      for (let j = i + 6; j <= i + 16 && j < path.length && !done; j++) {
+        const B = path[j];
+        if (B.area !== A.area) break;
+        const H = B.y - A.y, k = j - i;
+        if (H < 4) continue;
+        const mMin = Math.max(2, Math.ceil(H / (0.82 * hmaxP)));
+        for (let m = mMin; m <= Math.min(k - 3, mMin + 1) && !done; m++) {
+          const dyJ = H / m;
+          if (dyJ > 0.84 * hmaxP || dyJ < 0.58 * hmaxP) continue; // every step is a big, nearly full-charge jump
+          const reach = CFG.MOVE_SPEED * landTime(CFG.HOP_PERFECT, dyJ, g);
+          const gapMax = 0.6 * reach - 0.45;
+          const dx = B.x - A.x, dz = B.z - A.z, L = Math.hypot(dx, dz);
+          if (L < 1) continue;
+          const px = -dz / L, pz = dx / L;
+          for (let tr = 0; tr < 16 && !done; tr++) {
+            const bulge = (tr % 2 ? -1 : 1) * R(1, 12);
+            // pick small objects for the in-between steps
+            const nodes = [];
+            let ok = true;
+            for (let q = 1; q < m && ok; q++) {
+              let obj = null;
+              for (let pk = 0; pk < 20; pk++) {
+                const nm = pick(area.b);
+                if (LONG_NARROW.has(nm)) continue;
+                const o = BUILD[nm](); o.name = nm;
+                if (o.span || Math.max(o.top.w, o.top.d) > 2.6) continue; // small landing spots
+                obj = o; break;
+              }
+              if (!obj) { ok = false; break; }
+              const f = q / m, s = Math.sin(PI * f) * bulge;
+              nodes.push({ obj, x: A.x + dx * f + px * s, z: A.z + dz * f + pz * s, y: A.y + H * f, yaw: rng() * PI * 2 });
+            }
+            if (!ok) continue;
+            // check every jump of the chain: A -> n1 -> ... -> B
+            const chain = [{ ...A, isMain: true }, ...nodes.map((n) => ({ x: n.x, y: n.y, z: n.z, yaw: n.yaw, w: n.obj.top.w, d: n.obj.top.d })), { ...B, isMain: true }];
+            const skip = new Set([i, j]);
+            const boxes = [], corrs = [];
+            for (let q = 0; q < chain.length - 1 && ok; q++) {
+              const a = chain[q], b = chain[q + 1];
+              const ux = b.x - a.x, uz = b.z - a.z, l = Math.hypot(ux, uz);
+              const gap = l - exitDist(a, ux / l, uz / l) - exitDist(b, -ux / l, -uz / l);
+              if (gap < 0.9 || gap > gapMax) { ok = false; break; }
+              const corr = { min: [Math.min(a.x, b.x) - 0.7, Math.min(a.y, b.y) + 0.25, Math.min(a.z, b.z) - 0.7], max: [Math.max(a.x, b.x) + 0.7, Math.max(a.y, b.y) + hmaxP + 2.0, Math.max(a.z, b.z) + 0.7] };
+              if (!corrOk(corr, skip)) { ok = false; break; }
+              corrs.push(corr);
+            }
+            for (const n of nodes) {
+              if (!ok) break;
+              if (Math.hypot(n.x, n.z) > 46) { ok = false; break; }
+              const box = objAABB(n.obj, n.x, n.y - n.obj.top.h, n.z, n.yaw);
+              if (!isOk(box, skip)) { ok = false; break; }
+              for (const bb of boxes) if (aabbHit(box, bb, 1.0)) { ok = false; break; }
+              boxes.push(box);
+            }
+            if (!ok) continue;
+            // commit
+            for (const n of nodes) {
+              placeObj(n.obj, n.x, n.y - n.obj.top.h, n.z, n.yaw, accs[A.area]);
+              const mk = new Obj(); // golden marker floating above the platform
+              mk.add(geoIco(0), 0, 2.4, 0, 0.32, 0.5, 0.32, gold);
+              placeObj(mk, n.x, n.y, n.z, 0, accs[A.area], false);
+            }
+            for (const b of boxes) placed.push(b);
+            for (const c of corrs) corridors.push(c);
+            const n0 = nodes[0], ux = n0.x - A.x, uz = n0.z - A.z, l = Math.hypot(ux, uz);
+            const side = Math.max(A.w, A.d) / 2 + 2.2;
+            makeSign(['ABKÜRZUNG', 'schwer, aber schneller!'], A.x - uz / l * side, A.y + 3.4, A.z + ux / l * side, -ux / l + uz / l * 0.6, -uz / l - ux / l * 0.6, gold).scale.setScalar(0.8);
+            WORLD.shortcuts.push({ from: i, to: j, saves: k - m, nodes: nodes.map((n) => ({ x: n.x, y: n.y, z: n.z, yaw: n.yaw, w: n.obj.top.w, d: n.obj.top.d, name: n.obj.name })) });
+            lastFork = j; done = true;
+          }
+        }
+      }
+    }
   }
 
   // ---------------- floating junk (decor, but solid – maybe a shortcut?) ----------------
